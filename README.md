@@ -1,5 +1,15 @@
 # FGO Arcade on Linux — install guide
 
+> **Status: experimental.** This is a fan patch put together on one machine, and it has only ever
+> been tested there: CachyOS, wine 11.x, a Radeon RX 9070 XT, Wayland. Nothing here is guaranteed to
+> work on another distribution, another GPU or another Wine build — a clean `install.sh` run on your
+> machine is a good sign, not a promise. Keep an eye on the ports, the prefix and the logs (the
+> README says where they are), and expect the odd `ERROR 8404` on the first boot.
+>
+> **Issues and pull requests are welcome** — especially reports from other hardware, other
+> distributions, Proton/Faugus runs and X11 sessions:
+> <https://github.com/swit33/fgoa-wine/issues>
+
 Runs **Fate/Grand Order Arcade** (Cloud23333's *local platform* build) with the
 [**FGOAC scooby**](https://github.com/githubuser420x/FGOAC-scooby) English patch on Linux under
 Wine, and gives it the launcher it expects.
