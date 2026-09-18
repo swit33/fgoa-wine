@@ -15,6 +15,13 @@ the FGOAC scooby release zip somewhere the installer can find them (its own fold
 the parent, `~/Downloads`, or `--sources <dir>`), then run `./install.sh`. It unpacks everything,
 applies the translation, creates the Wine prefix and sets up the shim, fonts and ports.
 
+This folder is also a git repository, kept *outside* the game (so wiping the game cannot take the
+source with it). To deploy a build, copy it in and run the installer from there:
+
+```bash
+cp -a fgoa-wine /path/to/game/ && /path/to/game/fgoa-wine/install.sh --sources /path/with/archives
+```
+
 ---
 
 ## Contents
@@ -28,7 +35,8 @@ applies the translation, creates the Wine prefix and sets up the shim, fonts and
 | `scripts/play.sh` | Starts the game directly, without the launcher. Screen mode, resolution, input and FPS come from `App/fgo-launcher.json`. |
 | `scripts/launch.py` | The actual launcher: regenerates `DEVICE/runtime/segatools.runtime.ini` the way `App/FGO_Launcher.ps1` does, then runs `inject.exe` with the GL and file hooks. |
 | `scripts/server.sh` | **Starts/stops the local server**: bundled MariaDB + ARTEMiS (ALL.Net 777, billing 9999, AimeDB 7777, DB 8889). `./server.sh stop` stops both. |
-| `scripts/apply-en.py` | **Applies the English dataset** to the install: copies the 1683 override files and rewrites the translated strings inside `ago.exe`. Idempotent; keeps backups. |
+| `scripts/apply-en.py` | **Applies the English dataset** to the install: patches `App/zh/fgozh.dll` so the release's own English hook loads under Wine, copies the 1683 override files and rewrites the translated strings inside `ago.exe`. Idempotent; keeps backups. |
+| `scripts/patch-server.py` | Two text fixes in `Server/tools/` taken from [yana-arch/FGOAC-scooby-linux](https://github.com/yana-arch/FGOAC-scooby-linux) (branch `linux-support`, applied verbatim): the account CLI no longer prints INFO logs in front of its JSON (the launcher showed `bad_output` on the Account page), and the servant-upgrade tables are indexed once instead of being rescanned per Servant. Idempotent, `--verify` included. |
 | `scripts/patch-ago-import.py` | One-line, one-time binary fix in `ago.exe`: renames the imported `USER32.SetWindowFeedbackSetting` (an unimplemented Wine stub that aborts the process) to a harmless existing export. |
 | `scripts/set-ports.py` | Moves the local server's ports using the platform's own config tool (`Server/tools/fgo_server_config.py`), with its "server is running" guard disabled. `install.sh` calls it when the DB port 8888 is already taken. |
 | `scripts/fix-account.py` | Repairs an install where the game created the "unbound" account `aime_id 4294967295` before a real account existed (the launcher then throws on it). `install.sh` does not call this by itself — the rule is: create the account in the launcher *before* the first game start. |
@@ -47,14 +55,11 @@ The shipping front end (`FGOAC scooby.exe`) drives every action through PowerShe
 writable-layout check, the environment report, `Apply-EN-Patch.ps1`, `Start-FGOLocalServer.ps1`,
 `Stop-FGOLocalServer.ps1`, `Stop-FGOLocalServerWhenIdle.ps1`, `FGO_Launcher.ps1`, and the updater).
 PowerShell 7 under Wine starts but executes nothing (both 7.2 and 7.4: the .NET host comes up, the
-managed assembly "exits 0", no command runs), so the launcher cannot do anything on Linux. Note that
-Wine refuses to *exec* a non-PE file given as a Windows path from the command line, but
-**`CreateProcess` — which is what the launcher uses — runs it fine and propagates its exit code**.
-
-So `pwsh.exe` is replaced by a shim, and the shim has **two** pieces — because .NET is fussy. The
-launcher starts its scripts with a handle list (`STARTUPINFOEX`), and with a non-PE child Wine reports
-a process that exits 0 immediately **without ever running it** (the version probe, which uses a
-plainer `ProcessStartInfo`, was unaffected — which is what made this so confusing at first).
+managed assembly "exits 0", no command runs), so the launcher cannot do anything on Linux. Wine
+itself has no trouble with non-PE targets — a `#!` script named `pwsh.exe` runs fine — but the
+launcher starts its scripts with a handle list (`STARTUPINFOEX`), and for that shape Wine reports a
+child that exits 0 **without ever running the file**. The version probe, which uses a plainer
+`ProcessStartInfo`, was unaffected — which is what made this so confusing at first.
 
 | Piece | What it does |
 | --- | --- |
@@ -92,8 +97,10 @@ What it does, in order:
 3. Checks the files the platform needs (`App/ago.exe`, `App/inject.exe`, `AMFS/ICF1`, the bundled
    Python and MariaDB, `Server/tools/fgo_account.py`, and so on).
 4. Applies our layer: keeps a pristine `App/ago.exe.pristine`, then rebuilds `ago.exe` from it — the
-   `USER32.SetWindowFeedbackSetting` import rename, then the English strings — and overlays the 1683
-   English resource files. Re-running is deterministic because it always starts from the pristine copy.
+   `USER32.SetWindowFeedbackSetting` import rename, then the English strings — patches
+   `App/zh/fgozh.dll` so the release's own English hook loads, overlays the 1683 English resource
+   files, and fixes the two server-side tools. Re-running is deterministic because it always starts
+   from the pristine copy and every step is idempotent.
 5. Creates the Wine prefix if needed and prepares it: the shim at
    `C:\Program Files\PowerShell\7\pwsh.exe`, the WPF fonts **and their registry entries**, and
    `~/.config/fgoa-wine/config.env`.
@@ -161,11 +168,21 @@ unzip -o FGOAC-scooby-v*.zip -d <root>/
   holds 8888 (`docker-proxy`, as here), run `scripts/set-ports.py` to move the server's ports
   consistently (it edits `core.yaml`, `fgo-launcher.json`, `segatools.ini` and `mariadb.ini`).
 
-* **English without the `zh` hook** — the English release normally works by injecting
+* **English: the `zh` hook, patched to load** — the English release works by injecting
   `App/zh/fgozh.dll`, which redirects game resources to `App/zh/` and patches the translated strings
-  inside `ago.exe` in memory. Under Wine that DLL loads, logs its index, and then fails its own
-  initialisation, which makes the injector kill the launch. `apply-en.py` therefore does the same
-  thing ahead of time, on disk:
+  inside `ago.exe` in memory. Under Wine that DLL loaded, logged its index and then failed its own
+  `DllMain`, which makes the injector kill the launch. The cause, and the fix, come from
+  [yana-arch/FGOAC-scooby-linux](https://github.com/yana-arch/FGOAC-scooby-linux): `fgozh.dll` hooks
+  five `ntdll` functions, one of them `NtQueryInformationByName`, which Wine does not export; the
+  hook treats the missing export as fatal (`MH_ERROR_FUNCTION_NOT_FOUND`) and bails out. Five bytes at
+  offset `0x19E99` (`mov eax,0Ch` → `xor eax,eax`) make it carry on, and the hook then does its job:
+  `logs/fgozh.log` reports `REDIRECT_INDEX files=1683` and the game is translated the way the author
+  intended. `apply-en.py` applies that patch (after verifying the bytes, keeping
+  `App/zh/fgozh.dll.wine-hook.bak`), and `launch.py` injects the hook with `FGO_ZH_ENABLED=1`.
+
+  The same dataset is *also* laid down **on disk**, because the hook needs `App/zh/` present anyway
+  and because it is the fallback when a future build breaks the five-byte signature: `apply-en.py`
+  then warns and skips the hook, and the game still shows English.
 
   * **1683 files** — `App/zh/text-outputs.json` (1443) plus the 240 rebuilt sprite archives in
     `App/zh/rom/sprite/` (they are not in that list; without them the Aime registration, summon and
@@ -178,6 +195,27 @@ unzip -o FGOAC-scooby-v*.zip -d <root>/
 
   Backups: replaced files under `_en-overlay-backup/`, `App/ago.exe.en-overlay.bak`. The pristine
   `ago.exe` from `本体` can also be re-extracted from the RAR archives.
+
+* **Graphics on non-NVIDIA cards** — the game asks the driver for NVIDIA-only OpenGL extensions
+  (`GL_NV_bindless_texture` and friends). Two community layers answer that on AMD/Intel, and the
+  launcher's compat folder (shipped in the scooby release as `compat/`) can install either from its
+  Display page:
+  * `compat/fgoglcompat.dll` — the older, wider one: RX 500/6000/7600 and desktop Ryzen graphics.
+    This is what `launch.py` injects here, and what this install was verified with.
+  * `compat/amd-shim/opengl32.dll` — fluphus's newer shim (MIT), installed as `App/opengl32.dll`
+    with `App/opengl32real.dll` and `App/amdcfg/amdOglpSettings.cfg`. Published as tested only on an
+    RX 7900 XTX; reported to fail at the first battle on RX 500/6000/7600. Untested on the RX 9070 XT
+    this was developed on.
+  NVIDIA users should ignore both and use PRIME render offload instead.
+
+* **Running under Proton/UMU instead of plain Wine** — the launcher is a self-contained single-file
+  .NET app; `DOTNET_BUNDLE_EXTRACT_BASE_DIR=C:\dotnet_bundle_extract` keeps its extraction in a
+  predictable place and avoids startup hangs under Proton. For gamepads also set
+  `WINEDLLOVERRIDES=xinput1_4=n,b`. Neither is needed with the `wine` this install uses.
+
+* **The launcher's own compat switch** — `App/fgo-launcher.json` carries `gpuCompat: true`; the
+  Display page can install a layer from `compat/` into `App/`. Do not enable it *and* keep our
+  injected `fgoglcompat.dll` at the same time — pick one layer, not both.
 
 ---
 
@@ -237,6 +275,9 @@ first game start, or create the account from the launcher's Account page.
 * The English dataset covers menus, story, tutorial, shops and the rebuilt artwork; a few event
   screens (co-op banners, co-op results, later event shops) remain Japanese artwork by design of the
   patch author.
+* **`AimeDB`/servant upgrades**: the two `Server/tools/` fixes from `yana-arch` are applied; the
+  "Max All Servants" timeout they describe did not reproduce here (7.6 s either way on a 120-servant
+  profile), so the indexing fix is carried for portability, not because it was needed.
 * Not done yet: a Faugus/Proton entry (the scripts currently run the prefix directly with `wine`).
 
 Logs worth reading when something breaks: `/tmp/mariadb.log`, `/tmp/artemis.log`, the launcher
@@ -248,6 +289,11 @@ output, and the game's own `logs/` next to `App/` (`fgozh.log`, `*-trace.log`, `
 
 **Cloud23333** — the FGO Arcade local platform (server package, Chinese front end, file hook).
 **githubuser420x** — the FGOAC scooby English patch and its launcher.
+**yana-arch** — [FGOAC-scooby-linux](https://github.com/yana-arch/FGOAC-scooby-linux) (branch
+`linux-support`): the five-byte `fgozh.dll` fix that brought the release's own English hook back to
+life on Wine, and the two `Server/tools/` fixes (account CLI log level, servant-upgrade indexing),
+both carried over here verbatim.
 **fluphus** — the AMD/Intel OpenGL compatibility layer (MIT), shipped inside the platform.
+
 Fate/Grand Order Arcade is SEGA's and TYPE-MOON's. Nothing in this folder contains game data or is
 sold; it is glue for a fan translation applied to files you already have.
