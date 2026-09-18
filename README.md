@@ -1,7 +1,8 @@
 # FGO Arcade on Linux — install guide
 
-Runs **Fate/Grand Order Arcade** (Cloud23333's *local platform* build) with the **FGOAC scooby**
-English patch on Linux under Wine, and gives it the launcher it expects.
+Runs **Fate/Grand Order Arcade** (Cloud23333's *local platform* build) with the
+[**FGOAC scooby**](https://github.com/githubuser420x/FGOAC-scooby) English patch on Linux under
+Wine, and gives it the launcher it expects.
 
 This folder is **not a game download**. It holds only the glue that the shipped Windows front end
 cannot provide on Linux: that launcher drives every action through PowerShell, which Wine cannot run,
@@ -146,11 +147,18 @@ are written into `~/.config/fgoa-wine/config.env` by the installer.
 
 ## Credits
 
-**Cloud23333** — the FGO Arcade local platform. **githubuser420x** — the FGOAC scooby English patch
-and launcher. **yana-arch** — [FGOAC-scooby-linux](https://github.com/yana-arch/FGOAC-scooby-linux)
-(the `fgozh.dll` fix and the two server-side fixes were adopted from there; details in
-[`docs/UPSTREAM.md`](docs/UPSTREAM.md)). **fluphus** — the MIT AMD/Intel OpenGL layer that ships in
-the platform's `compat/`.
+This project is glue around other people's work, and it says so everywhere:
+
+* **[githubuser420x](https://github.com/githubuser420x) — [FGOAC-scooby](https://github.com/githubuser420x/FGOAC-scooby)**:
+the English patch and the launcher this folder exists to run. Its `payload/`, `manifest.json`,
+`Apply-EN-Patch.ps1` and `compat/` are used exactly as shipped — nothing here reimplements them.
+* **[yana-arch](https://github.com/yana-arch) — [FGOAC-scooby-linux](https://github.com/yana-arch/FGOAC-scooby-linux)**
+(branch `linux-support`): two of the fixes here are theirs — the five-byte `fgozh.dll` patch that lets
+the release's own English hook load under Wine, and the two `Server/tools/` fixes. What was taken,
+and what was measured before taking it, is in [`docs/UPSTREAM.md`](docs/UPSTREAM.md).
+* **Cloud23333** — the FGO Arcade local platform (`本体`, `前端`) that everything runs on.
+* **[fluphus](https://github.com/fluphus) — [fgo-arcade-amd-shim](https://github.com/fluphus/fgo-arcade-amd-shim)**
+(MIT): the AMD/Intel OpenGL layer that ships inside the platform's `compat/` folder.
 
 Fate/Grand Order Arcade is SEGA's and TYPE-MOON's. Nothing here contains game data or is sold; it is
 glue for a fan translation applied to files you already have.

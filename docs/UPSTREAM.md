@@ -8,10 +8,10 @@ came from where, so a future maintainer can retrace every change instead of gues
 | Piece | Author | Notes |
 | --- | --- | --- |
 | FGO Arcade local platform (`本体`, `前端`) | **Cloud23333** | The server package, the Chinese front end and the file hook. V1.02 is the one to be on. |
-| FGOAC scooby (English patch + launcher) | **githubuser420x** | `FGOAC scooby.exe`, `payload/`, `manifest.json`, `Apply-EN-Patch.ps1`, `GUIDE_EN.md`, and the compat layers in `compat/`. |
+| FGOAC scooby (English patch + launcher) | **[githubuser420x](https://github.com/githubuser420x)** ([FGOAC-scooby](https://github.com/githubuser420x/FGOAC-scooby)) | `FGOAC scooby.exe`, `payload/`, `manifest.json`, `Apply-EN-Patch.ps1`, `GUIDE_EN.md`, and the compat layers in `compat/`. |
 | `compat/fgoglcompat.dll` | arrived through the community | Aliases 18 NVIDIA-only OpenGL entry points onto ARB. Shipped as received, no licence file. |
-| `compat/amd-shim/opengl32.dll` | **fluphus** ([fgo-arcade-amd-shim](https://github.com/fluphus/fgo-arcade-amd-shim), MIT) | Newer AMD/Intel layer: an `opengl32.dll` forwarder plus `amdcfg/amdOglpSettings.cfg`. Published as tested only on an RX 7900 XTX; reported to fail at the first battle on RX 500/6000/7600. This install uses the older `fgoglcompat.dll` instead (injected by `launch.py`). NVIDIA cards want PRIME render offload, not either layer. |
-| `FGOAC-scooby-linux` | **yana-arch** (branch `linux-support`) | The prior Linux kit this project compared itself against. Three fixes were adopted from it — see below. |
+| `compat/amd-shim/opengl32.dll` | **[fluphus](https://github.com/fluphus)** ([fgo-arcade-amd-shim](https://github.com/fluphus/fgo-arcade-amd-shim), MIT) | Newer AMD/Intel layer: an `opengl32.dll` forwarder plus `amdcfg/amdOglpSettings.cfg`. Published as tested only on an RX 7900 XTX; reported to fail at the first battle on RX 500/6000/7600. This install uses the older `fgoglcompat.dll` instead (injected by `launch.py`). NVIDIA cards want PRIME render offload, not either layer. |
+| `FGOAC-scooby-linux` | **[yana-arch](https://github.com/yana-arch)** ([FGOAC-scooby-linux](https://github.com/yana-arch/FGOAC-scooby-linux), branch `linux-support`) | The prior Linux kit this project compared itself against. Three fixes were adopted from it — see below. |
 
 ## What came from yana-arch/FGOAC-scooby-linux
 
