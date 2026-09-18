@@ -94,7 +94,15 @@ def load_config(root):
     mode = cfg.get("displayMode")
     if mode not in ("windowed", "borderless", "exclusive"):
         mode = "windowed" if cfg.get("windowed") else "exclusive"
+    # Роль кабинета: FGO_Launcher.ps1 берёт её из fgo-launcher.json и передаёт как -sm.
+    # "saved" (по умолчанию) = не передавать, игра возьмёт сохранённую у себя. Если там
+    # оказался Satellite (Sub Unit), клиент ждёт Location Server главного кабинета и
+    # показывает ERROR 8404 — тогда помогает "server" (Main Unit).
+    cabinet = cfg.get("cabinetMode")
+    if cabinet not in ("server", "satellite"):
+        cabinet = "saved"
     return dict(mode=mode,
+                cabinet=cabinet,
                 width=int(cfg.get("resolutionWidth") or 1280),
                 height=int(cfg.get("resolutionHeight") or 720),
                 fps=int(cfg.get("targetFps") or 60),
@@ -225,6 +233,9 @@ def main():
     if zh_hook:
         args += ["-k", G + "\\zh\\fgozh.dll"]
     args += [G + "\\ago.exe", native_render_argument(cfg["width"], cfg["height"])]
+    if cfg["cabinet"] != "saved":
+        # как FGO_Launcher.ps1: -sm <server|satellite> идёт сразу после native-аргумента
+        args += ["-sm", cfg["cabinet"]]
     if windowed:
         args.append("-w")
     args.append("--wasapi-shared")
@@ -232,6 +243,7 @@ def main():
     if "--print-args" in sys.argv:
         for key, value in env.items():
             print(f"export {key}={sh_quote(value)}")
+        print(f"# cabinet: {cfg['cabinet']}")
         print("LAUNCH_ARGS=(" + " ".join(sh_quote(a) for a in args) + ")")
         return 0
 

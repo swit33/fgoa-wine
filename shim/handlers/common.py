@@ -52,6 +52,13 @@ def log_path():
     return os.environ.get("FGOA_SHIM_LOG", CONF.get("FGOA_SHIM_LOG", "/tmp/fgoa-shim.log"))
 
 
+def launch_log_path():
+    """Куда пишется вывод игры, когда лончеру мы её отдаём в фон (кнопка Play)."""
+    logs = os.path.join(install_root(), "logs")
+    os.makedirs(logs, exist_ok=True)
+    return os.path.join(logs, "fgo-launch-%s.log" % time.strftime("%Y%m%d-%H%M%S"))
+
+
 def log(line):
     try:
         with open(log_path(), "a", encoding="utf-8") as fh:
@@ -93,6 +100,8 @@ def run(cmd, cwd=None, env=None, timeout=None, quiet=False):
     """Запуск с наследованием stdio: лончер читает наш вывод в свою панель логов."""
     log(f"run: {' '.join(cmd)}" + (f" (cwd={cwd})" if cwd else ""))
     full_env = dict(os.environ)
+    # без этого python-хелперы копят вывод в буфере и панель логов лончера пустует
+    full_env.setdefault("PYTHONUNBUFFERED", "1")
     if env:
         full_env.update(env)
     try:
@@ -113,6 +122,7 @@ def spawn_detached(cmd, log_file, cwd=None, env=None):
     """Фоновый процесс, который переживёт лончер: свои потоки — в файл, новая сессия."""
     log(f"spawn detached: {' '.join(cmd)} -> {log_file}")
     full_env = dict(os.environ)
+    full_env.setdefault("PYTHONUNBUFFERED", "1")
     if env:
         full_env.update(env)
     handle = open(log_file, "ab")

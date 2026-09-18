@@ -33,7 +33,7 @@ cp -a fgoa-wine /path/to/game/ && /path/to/game/fgoa-wine/install.sh --sources /
 | `config/drirc.d/99-fgoa.conf` | Mesa config: `allow_glsl_embedded_structure_declarations` for `ago.exe`. The game's shaders use nested `struct` declarations, which NVIDIA's compiler accepts and Mesa rejects by default. `install.sh` adds symlinks to `/usr/share/drirc.d` beside it. |
 | `scripts/launcher.sh` | **Starts the shipping launcher** (`FGOAC scooby.exe`) — the normal way to play. |
 | `scripts/play.sh` | Starts the game directly, without the launcher. Screen mode, resolution, input and FPS come from `App/fgo-launcher.json`. |
-| `scripts/launch.py` | The actual launcher: regenerates `DEVICE/runtime/segatools.runtime.ini` the way `App/FGO_Launcher.ps1` does, then runs `inject.exe` with the GL and file hooks. |
+| `scripts/launch.py` | The actual launcher: regenerates `DEVICE/runtime/segatools.runtime.ini` the way `App/FGO_Launcher.ps1` does, then runs `inject.exe` with the GL and file hooks and the cabinet role (`-sm`). |
 | `scripts/server.sh` | **Starts/stops the local server**: bundled MariaDB + ARTEMiS (ALL.Net 777, billing 9999, AimeDB 7777, DB 8889). `./server.sh stop` stops both. |
 | `scripts/apply-en.py` | **Applies the English dataset** to the install: patches `App/zh/fgozh.dll` so the release's own English hook loads under Wine, copies the 1683 override files and rewrites the translated strings inside `ago.exe`. Idempotent; keeps backups. |
 | `scripts/patch-server.py` | Two text fixes in `Server/tools/` taken from [yana-arch/FGOAC-scooby-linux](https://github.com/yana-arch/FGOAC-scooby-linux) (branch `linux-support`, applied verbatim): the account CLI no longer prints INFO logs in front of its JSON (the launcher showed `bad_output` on the Account page), and the servant-upgrade tables are indexed once instead of being rescanned per Servant. Idempotent, `--verify` included. |
@@ -225,9 +225,18 @@ unzip -o FGOAC-scooby-v*.zip -d <root>/
   `resolutionWidth`/`resolutionHeight`, `inputMode`, `targetFps`. `launch.py` turns that into
   `[gfx]`/`[amvideo]` in the runtime INI and into the engine's native mode argument
   (`-hdtv720`, `-hdtv1080`, `-wqhd`, `-wuxga`, `-wqxga`), plus the borderless compatibility variables.
-  Current setting: borderless 2560x1440. Edit the JSON and restart the game.
+  The released file ships windowed 1280x720; edit the JSON and restart the game.
   Note: the file still carries `monitorDevice: "\\\\.\\DISPLAY5"` and window coordinates from the
   author's machine; the game falls back to the primary display, so it is harmless.
+
+* **Cabinet role (`cabinetMode`)** — the same JSON carries `cabinetMode`: `saved` (pass nothing,
+  use the mode the game saved), `server`, or `satellite`. `launch.py` passes it on as `-sm <value>`,
+  exactly like `FGO_Launcher.ps1`. **If the startup screen reads `SYSTEM STARTUP (SATELLITE:SUB)`
+  with `Location Server : WAIT`, the game thinks it is a sub cabinet** and waits for a main unit that
+  does not exist in an offline setup; the client then dies with **ERROR 8404**. Passing `-sm server`
+  does *not* override the saved mode — the fix is in the game's own test menu, on that screen:
+  **F1** (Game Test Menu; F2 moves the arrow, F1 confirms) → **Game Settings** → **Startup Mode** →
+  **Main Unit** → Exit. The scooby GUIDE documents the same thing under "8404 at boot".
 
 * **Draw rates (the gacha)** — `Server/artemis/config/fgo_summon_weights.json`, editable from the
   launcher: **Cards and Deck → the “Draw Rates” tab**. Every card has a `Weight (integer)` column with
@@ -251,10 +260,19 @@ appears in `Server/state/fgo-players.json`.
 
 Known issues:
 
-* **The shipped front end** now works under Wine through the shim (`./install.sh`): the main window,
+* **The shipped front end** works under Wine through the shim (`./install.sh`): the main window,
   Play, Start/Stop server, Account, Cards and Deck, Settings and Advanced pages, and its own
-  “Check for updates”. Its buttons still need one human click each for the flows that start
-  something long (Play takes the screen and boots the game for about a minute).
+  “Check for updates”. **Play returns immediately** — the game is started detached, its live output
+  goes to `logs/fgo-launch-<date>.log`, and the launcher stays responsive — so pressing Play twice
+  no longer starts two games. A new Play stops whatever is left of the previous session
+  (`ago.exe` / `amdaemon.exe` / `inject.exe`), as the original `FGO_Launcher.ps1` does.
+* **Server-side fixes applied by the installer**: the account CLI no longer prints INFO logs in front
+  of its JSON (that made the launcher show `bad_output` on the Account page).
+* **ERROR 8404 / "Location Server : WAIT" at boot** — the game saved its Startup Mode as Satellite
+  (sub cabinet) and waits for a main unit, which an offline install does not have. Fix it in the
+  game's test menu: on that screen **F1** (Game Test Menu; F2 moves the arrow, F1 confirms) →
+  **Game Settings** → **Startup Mode** → **Main Unit** → Exit. See the section above; the scooby
+  GUIDE documents it as "8404 at boot".
 * **AimeDB** (`:7777`) accepts the game's connection but fails to parse it
   (`Failed to decrypt 0a because Data must be aligned to block boundary in ECB mode`) — the card
   reader protocol. Account creation and play are unaffected.

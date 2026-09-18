@@ -88,4 +88,5 @@ if [ ! -f "$HANDLERS/$handler.py" ]; then
     exit 1
 fi
 
-exec python3 "$HANDLERS/$handler.py" "$@"
+# -u: вывод хендлеров идёт вживую в панель логов лончера, а не в конце
+exec python3 -u "$HANDLERS/$handler.py" "$@"
