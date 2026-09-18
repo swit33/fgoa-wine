@@ -27,6 +27,11 @@ import time
 
 BACKUP_DIR = "_en-overlay-backup"
 
+# Эти два файла правит patch-server.py (правки из yana-arch). Их сверяет его собственный
+# --verify, а копия payload не должна их перезаписывать: иначе повторный накат английского
+# (кнопка Apply EN patch в лончере) возвращал бы их к исходному виду.
+SERVER_PATCHED = {"Server/tools/fgo_account.py", "Server/tools/fgo_account_actions.py"}
+
 # 5 байт в App\\zh\\fgozh.dll: mov eax,0Ch (MH_ERROR_FUNCTION_NOT_FOUND) -> xor eax,eax
 FGOZH_REL = "App/zh/fgozh.dll"
 FGOZH_OFFSET = 0x19E99
@@ -234,14 +239,24 @@ def overlay_payload(root, mode):
     """
     payload = os.path.join(root, "payload")
     if not os.path.isdir(payload):
-        return 0, 0, ["нет папки payload — английский набор не приложен"]
+        return 0, 0, 0, ["нет папки payload — английский набор не приложен"]
     manifest = read_json(os.path.join(root, "manifest.json"))
     files = manifest["files"]
-    copied, problems = 0, []
+    copied, separate, problems = 0, 0, []
     for rel, expected in sorted(files.items()):
         rel = rel.replace("\\", "/")
         src, dst = os.path.join(payload, rel), os.path.join(root, rel)
+        if rel in SERVER_PATCHED and mode == "verify":
+            # их правит patch-server.py, и он же их проверяет: после его правки файл
+            # намеренно расходится с манифестом
+            separate += 1
+            continue
         from_payload = os.path.isfile(src)
+        if rel in SERVER_PATCHED:
+            # их правит patch-server.py, и он же их проверяет: не затираем уже наложенное
+            # (иначе кнопка Apply EN patch в лончере откатывала бы серверные правки)
+            copied += 1
+            continue
         if not from_payload:
             # часть манифеста (сам FGOAC scooby.exe) лежит прямо в корне — только сверяем
             if mode == "verify" or os.path.isfile(dst):
@@ -262,13 +277,13 @@ def overlay_payload(root, mode):
         os.makedirs(os.path.dirname(dst), exist_ok=True)
         shutil.copyfile(src, dst)
         copied += 1
-    return copied, len(files), problems
+    return copied, len(files), separate, problems
 
 
 def main():
     root = os.path.abspath(sys.argv[1])
     mode = "verify" if "--verify" in sys.argv else ("apply" if "--apply" in sys.argv else "plan")
-    payload_copied, manifest_total, payload_problems = overlay_payload(root, mode)
+    payload_copied, manifest_total, payload_separate, payload_problems = overlay_payload(root, mode)
     # патч хука строго после копии payload: она возвращает файл к нетронутому виду
     fgozh_state, fgozh_problems = patch_fgozh(root, mode)
     # список оверлея строим ПОСЛЕ payload: только он кладёт в App/zh спрайты и прочее
@@ -301,7 +316,8 @@ def main():
         print(f"  маркер: App/zh/en-patch.json (версия {marker['version']})")
 
     print(f"режим: {mode}")
-    print(f"  payload по манифесту: {payload_copied}/{manifest_total} файлов")
+    print(f"  payload по манифесту: {payload_copied}/{manifest_total - payload_separate} файлов"
+          + (f"  (+{payload_separate} правит patch-server.py)" if payload_separate else ""))
     print(f"  хук zh (fgozh.dll):  {fgozh_state}")
     print(f"  ресурсов обработано: {copied}/{len(rels)}  (бэкапов создано: {backups})")
     print(f"  строк в ago.exe:     {patched}  (пропущено: {skipped}, пустой перевод: {empty})")

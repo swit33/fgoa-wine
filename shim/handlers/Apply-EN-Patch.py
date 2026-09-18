@@ -68,6 +68,11 @@ def main():
         print("[apply-en] the dataset did not verify — see the report above.", file=sys.stderr)
         return 5
     print("[apply-en] done: resources overlaid and ago.exe strings patched.")
+    code = common.run(["python3", common.script("patch-server.py"), root, "--apply"])
+    if code != 0:
+        print("[apply-en] server-side fixes did not apply — see the report above.", file=sys.stderr)
+        return 5
+    print("[apply-en] server-side fixes in place (account CLI log level, upgrade indexing).")
     return 0
 
 
