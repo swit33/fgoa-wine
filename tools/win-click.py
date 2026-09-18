@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
 """Clicks inside a Wine application window - for driving the launcher.
 
-The compositor (Hyprland) does not deliver clicks into a Wine window: hl.dsp.send_shortcut
-with mouse:272 sends the event but WPF never sees it. So we click from the inside: the script runs
-under the platform's own Windows python inside Wine, where SetCursorPos + mouse_event clicks for real.
+A Wayland compositor does not deliver synthetic clicks into a Wine window: under Hyprland,
+hl.dsp.send_shortcut with mouse:272 sends the event but WPF never sees it. So we click from the
+inside: the script runs under the platform's own Windows python inside Wine, where SetCursorPos +
+mouse_event produce a real click.
 
 Coordinates are relative to the window's CLIENT area (what you see under the title bar).
+
+Not needed to install or play - it is here for driving the UI (and the game's own test menu, the way
+ERROR 8404 is cured) from a script.
 
   wine python.exe tools/win-click.py info  "FGOAC scooby"
   wine python.exe tools/win-click.py click "FGOAC scooby" 55 140

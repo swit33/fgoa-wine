@@ -163,6 +163,6 @@ The three stages all write into the same folder, later stages overwriting earlie
 that way is what `install.sh` calls "the game folder"; nothing after step 3 cares where the archives
 came from.
 
-On the machine this was developed on, each archive was also unpacked *separately* under
-`/mnt/misc/games/fgoa/test/` (`本体/`, `前端-V1.01/`, `前端-V1.02/`, `FGOAC-scooby-v1.1.2/`) so their
-contents can be inspected and compared with what a given install ended up with.
+It also helps to unpack each archive *separately* somewhere of its own (`本体/`, `前端-V1.01/`,
+`前端-V1.02/`, `FGOAC-scooby-v1.1.2/`): then its contents can be inspected and compared with what a
+given install ended up with, and a fresh game folder can be assembled from the pieces by hand.

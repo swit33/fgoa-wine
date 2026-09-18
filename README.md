@@ -147,7 +147,8 @@ With the game folder ready, the installer's own layer is these three commands:
 | `scripts/{set-ports,fix-account,stop-watcher}.py` | Port fixing, broken-account repair, and the server's idle watcher. |
 | `shim/` | The launcher's PowerShell replacement (PE stub + bash dispatcher + handlers). |
 | `config/drirc.d/99-fgoa.conf` | The Mesa setting the game's shaders need. |
-| `fonts/`, `tools/win-click.py` | The font mapping the installer applies from your system, and UI automation for debugging. |
+| `fonts/` | The font mapping the installer applies from your system (`fonts/NOTICE.md`). |
+| `tools/win-click.py` | Optional helper, **not needed to install or play**: it clicks and presses keys inside a Wine window, which a Wayland compositor cannot do from outside. It is what the ERROR 8404 route in `docs/UPSTREAM.md` is driven with. |
 | `docs/` | How it works inside, and where each fix came from. |
 
 Environment: `FGOA_ROOT` (game root), `WINEPREFIX` (default `~/.local/share/fgoa-wine/prefix`); both
