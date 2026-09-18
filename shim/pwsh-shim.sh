@@ -88,5 +88,14 @@ if [ ! -f "$HANDLERS/$handler.py" ]; then
     exit 1
 fi
 
-# -u: вывод хендлеров идёт вживую в панель логов лончера, а не в конце
+# -u: вывод хендлеров идёт вживую в панель логов лончера, а не в конце.
+# Заодно копия в logs/server-control.log: ровно этот файл лончер показывает в диалоге
+# «Server Did Not Start» (оригинальные ps1 писали туда свой транскрипт).
+CONTROL_LOG="${FGOA_ROOT:-}/logs/server-control.log"
+if [ -d "${FGOA_ROOT:-}" ]; then
+    mkdir -p "${FGOA_ROOT}/logs" 2>/dev/null || true
+    printf '[%s] %s\n' "$(date '+%F %T')" "$*" >> "$CONTROL_LOG" 2>/dev/null || true
+    python3 -u "$HANDLERS/$handler.py" "$@" 2>&1 | tee -a "$CONTROL_LOG"
+    exit "${PIPESTATUS[0]}"
+fi
 exec python3 -u "$HANDLERS/$handler.py" "$@"
