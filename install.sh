@@ -57,6 +57,11 @@ step() { printf '\n=== %s\n' "$*"; }
 warn() { printf '! %s\n' "$*" >&2; }
 die()  { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
 need() { command -v "$1" >/dev/null 2>&1 || die "the '$1' command is required (install its package)"; }
+# The fonts are prepared from the system, so fontconfig has to be there to find them.
+need_fonts_tools() {
+    need fc-match
+    need python3
+}
 
 export WINEPREFIX="$PREFIX"
 export WINEDEBUG="${WINEDEBUG:--all}"
@@ -155,12 +160,36 @@ setup_prefix() {
     fi
 
     if [ "$DO_FONTS" = 1 ]; then
-        cp -f "$HERE"/fonts/*.ttf "$PREFIX/drive_c/windows/Fonts/"
-        while IFS='|' read -r name file; do
+        # The fonts are deliberately not shipped with this project: the installer takes a free font
+        # from the system, rewrites its internal family name (the launcher's WPF front end asks for
+        # families no Linux system has) and registers the result in the prefix. See fonts/NOTICE.md.
+        local dest="$PREFIX/drive_c/windows/Fonts"
+        local fonts_failed=0
+        mkdir -p "$dest"
+        while IFS='|' read -r name file pattern family; do
             case "$name" in ''|'#'*) continue ;; esac
-            wine_run reg add "$FONTS_REG" /v "$name" /t REG_SZ /d "$file" /f >/dev/null
+            local src
+            src=$(fc-match -f '%{file}' "$pattern" 2>/dev/null || true)
+            if [ -z "$src" ] || [ ! -f "$src" ]; then
+                warn "no free font matches '$pattern' for family '$family'"
+                fonts_failed=$((fonts_failed + 1))
+                continue
+            fi
+            if python3 "$HERE/fonts/rename_font.py" "$src" "$dest/$file" "$family" >/dev/null; then
+                wine_run reg add "$FONTS_REG" /v "$name" /t REG_SZ /d "$file" /f >/dev/null
+            else
+                warn "could not prepare $file from $src"
+                fonts_failed=$((fonts_failed + 1))
+            fi
         done < "$HERE/fonts/fonts.list"
-        say "WPF fonts installed and registered (without the registry entries the launcher dies)"
+        if [ "$fonts_failed" -gt 0 ]; then
+            warn "$fonts_failed font(s) missing: install Liberation Sans/Mono and DejaVu Sans Mono"
+            warn "  Arch/CachyOS: sudo pacman -S ttf-liberation ttf-dejavu"
+            warn "  Debian/Ubuntu: sudo apt install fonts-liberation fonts-dejavu-core"
+            warn "the launcher will not start without them (it needs the families it asks for)"
+        else
+            say "WPF fonts prepared from the system and registered in the prefix"
+        fi
         wine_run wineserver -k >/dev/null 2>&1 || true
         sleep 2
     fi
@@ -253,6 +282,11 @@ verify_all() {
     else
         say "[FAIL] fonts are not registered (the launcher will die in FailFast)"; fails=$((fails+1))
     fi
+    if [ -f "$PREFIX/drive_c/windows/Fonts/SegoeUI.ttf" ] && [ -f "$PREFIX/drive_c/windows/Fonts/CascadiaMono.ttf" ]; then
+        say "[OK]   font files prepared in the prefix (renamed free fonts)"
+    else
+        say "[FAIL] font files are missing from $PREFIX/drive_c/windows/Fonts"; fails=$((fails+1))
+    fi
     if wine_run reg query 'HKCU\Software\Microsoft\Avalon.Graphics' /v DisableHWAcceleration 2>/dev/null | grep -q '0x1'; then
         say "[OK]   launcher dropdowns (WPF software rendering)"
     else
@@ -277,6 +311,7 @@ if [ "$DO_VERIFY" = 1 ]; then
 fi
 
 need wine; need python3
+if [ "$DO_FONTS" = 1 ]; then need_fonts_tools; fi
 
 step "checking the game folder"
 check_game_layout || die "assemble the game folder (本体 + 前端 1.02 + the launcher release) and run the installer again"

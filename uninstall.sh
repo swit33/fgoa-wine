@@ -31,7 +31,7 @@ if [ -f "$SHIM" ] && { file "$SHIM" | grep -q PE32 || grep -q 'fgoa-wine pwsh sh
 fi
 rm -f "$PSDIR/pwsh-stub.ini"
 
-while IFS='|' read -r name file; do
+while IFS='|' read -r name file _rest; do
     case "$name" in ''|'#'*) continue ;; esac
     wine reg delete "$FONTS_REG" /v "$name" /f >/dev/null 2>&1 || true
     rm -f "$PREFIX/drive_c/windows/Fonts/$file"

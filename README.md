@@ -27,9 +27,17 @@ stops.
 [`docs/INTERNALS.md`](docs/INTERNALS.md#assembling-the-game-folder). 1.02 is cumulative, so 1.01 does
 not have to be applied separately.)
 
-**On the machine:** Linux x86_64, `wine` (11.x used here), `python3`, ~35 GB free disk, a graphics
-driver that can do OpenGL 4.6 (Mesa works: a shim covers the NVIDIA-only extensions the game asks
-for), and **one `sudo`** for the privileged-port setting.
+**On the machine:**
+
+* Linux x86_64, `wine` (11.x used here), `python3`, ~35 GB free disk, and one `sudo` for the
+  privileged-port setting;
+* **fontconfig** (`fc-match`) and a free font package providing **Liberation Sans/Mono** and
+  **DejaVu Sans Mono** — the launcher's WPF front end asks for families no Linux system has, and
+  `install.sh` renames these into the Wine prefix on the spot
+  (`sudo pacman -S ttf-liberation ttf-dejavu` on Arch/CachyOS, `sudo apt install fonts-liberation
+  fonts-dejavu-core` on Debian/Ubuntu; details in [`fonts/NOTICE.md`](fonts/NOTICE.md));
+* a graphics driver that can do OpenGL 4.6 (Mesa works: a shim covers the NVIDIA-only extensions the
+  game asks for).
 
 ## Install
 
@@ -139,7 +147,7 @@ With the game folder ready, the installer's own layer is these three commands:
 | `scripts/{set-ports,fix-account,stop-watcher}.py` | Port fixing, broken-account repair, and the server's idle watcher. |
 | `shim/` | The launcher's PowerShell replacement (PE stub + bash dispatcher + handlers). |
 | `config/drirc.d/99-fgoa.conf` | The Mesa setting the game's shaders need. |
-| `fonts/`, `tools/win-click.py` | WPF fonts for the launcher, and UI automation for debugging. |
+| `fonts/`, `tools/win-click.py` | The font mapping the installer applies from your system, and UI automation for debugging. |
 | `docs/` | How it works inside, and where each fix came from. |
 
 Environment: `FGOA_ROOT` (game root), `WINEPREFIX` (default `~/.local/share/fgoa-wine/prefix`); both
@@ -157,10 +165,10 @@ the English patch and the launcher this folder exists to run. Its `payload/`, `m
 the release's own English hook load under Wine, and the two `Server/tools/` fixes. What was taken,
 and what was measured before taking it, is in [`docs/UPSTREAM.md`](docs/UPSTREAM.md).
 * **Cloud23333** — the FGO Arcade local platform (`本体`, `前端`) that everything runs on.
-* The fonts in `fonts/` are **Liberation Sans/Mono** (SIL OFL 1.1) and **DejaVu Sans Mono** (Bitstream
-  Vera licence) with their internal family renamed, because the launcher's WPF front end asks for
-  families no Linux system has and dies without them. No Microsoft font is included;
-  [`fonts/NOTICE.md`](fonts/NOTICE.md) lists each file, its real identity and its licence.
+* The fonts the launcher needs are **Liberation Sans/Mono** (SIL OFL 1.1) and **DejaVu Sans Mono**
+  (Bitstream Vera licence), taken from your system and renamed locally by the installer — none of them
+  ships with this project, and no Microsoft font is involved. See
+  [`fonts/NOTICE.md`](fonts/NOTICE.md).
 * **[fluphus](https://github.com/fluphus) — [fgo-arcade-amd-shim](https://github.com/fluphus/fgo-arcade-amd-shim)**
 (MIT): the AMD/Intel OpenGL layer that ships inside the platform's `compat/` folder.
 

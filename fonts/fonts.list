@@ -1,10 +1,15 @@
-# registry name in Windows | file in this folder
-# The launcher needs these: app.xaml asks for the families "Segoe UI, Yu Gothic UI, Microsoft YaHei UI" and
-# "Cascadia Mono, Consolas". Free fonts were renamed (nameID 1/16) with rename_font.py.
-Segoe UI (TrueType)|SegoeUI.ttf
-Segoe UI Bold (TrueType)|SegoeUI-Bold.ttf
-Segoe UI Italic (TrueType)|SegoeUI-Italic.ttf
-Segoe UI Bold Italic (TrueType)|SegoeUI-BoldItalic.ttf
-Consolas (TrueType)|Consolas.ttf
-Consolas Bold (TrueType)|Consolas-Bold.ttf
-Cascadia Mono (TrueType)|CascadiaMono.ttf
+# Fonts the launcher's WPF front end needs, as the installer prepares them.
+#
+# These files are NOT shipped with this project. app.xaml asks for families that no Linux system
+# provides ("Segoe UI, Yu Gothic UI, Microsoft YaHei UI" and "Cascadia Mono, Consolas"), and WPF dies
+# with FailFast when it cannot resolve any of them. So install.sh takes a free font from the system,
+# rewrites its internal family name with rename_font.py and registers the result in the Wine prefix.
+#
+# registry name in Windows | file to write into the prefix | fontconfig pattern | family to set
+Segoe UI (TrueType)|SegoeUI.ttf|Liberation Sans|Segoe UI
+Segoe UI Bold (TrueType)|SegoeUI-Bold.ttf|Liberation Sans:bold|Segoe UI
+Segoe UI Italic (TrueType)|SegoeUI-Italic.ttf|Liberation Sans:italic|Segoe UI
+Segoe UI Bold Italic (TrueType)|SegoeUI-BoldItalic.ttf|Liberation Sans:bold:italic|Segoe UI
+Consolas (TrueType)|Consolas.ttf|Liberation Mono|Consolas
+Consolas Bold (TrueType)|Consolas-Bold.ttf|Liberation Mono:bold|Consolas
+Cascadia Mono (TrueType)|CascadiaMono.ttf|DejaVu Sans Mono|Cascadia Mono
