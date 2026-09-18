@@ -1,13 +1,13 @@
-"""Обход защиты fgo_server_config: его `apply` считает «сервер запущен», если занят
-любой из текущих портов. На этой машине 8888 держит докер (не наш сервер), поэтому зовём
-его же функцию с check_running=False — формат записи остаётся штатным (core.yaml,
-fgo-launcher.json, segatools.ini, mariadb.ini правятся согласованно).
+"""Bypasses fgo_server_config's guard: its `apply` treats "server is running" as true when any
+of the current ports is busy. On this machine docker holds 8888 (not our server), so we call
+the same function with check_running=False - the write format stays the official one (core.yaml,
+fgo-launcher.json, segatools.ini and mariadb.ini are edited consistently).
 
-Запускается под Windows-python внутри Wine:
+Runs under the Windows python inside Wine:
 
   wine 'Z:\\...\\Server\\python\\python.exe' scripts/set-ports.py [http] [database]
 
-Корень установки берётся из FGOA_WIN_ROOT (по умолчанию Z:\\mnt\\misc\\games\\fgoa\\FGOA).
+The install root comes from FGOA_WIN_ROOT (defaults to Z:\\mnt\\misc\\games\\fgoa\\FGOA).
 """
 import os
 import sys

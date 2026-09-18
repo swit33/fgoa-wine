@@ -54,7 +54,7 @@ The installer, in order:
    8888 if something else holds it;
 6. verifies everything and prints what to do next.
 
-**Result to look for:** the last line reads `ИТОГ: всё на месте.` — then follow the numbered hints it
+**Result to look for:** the last line reads `RESULT: everything is in place.` — then follow the numbered hints it
 prints.
 
 ## First run

@@ -1,28 +1,28 @@
 #!/usr/bin/env python3
-"""Правит два серверных инструмента установки — обе правки из
-yana-arch/FGOAC-scooby-linux (ветка linux-support), перенесены дословно.
+"""Patches two server tools of the install - both fixes come from
+yana-arch/FGOAC-scooby-linux (branch linux-support) and were carried over verbatim.
 
-  1) Server/tools/fgo_account.py — CLI-режим печатал INFO-логи до JSON, и лончер
-     показывал "bad_output: [INFO] ... {json}" на странице Account (обновить слуг,
-     выдать материалы, переименовать). Теперь конфиг читается всегда, уровень
-     логирования поднимается до warning, а когда профиль не изолирован, рядом
-     создаётся временный fgo.yaml — иначе warning до сервлета не доходит.
-  2) Server/tools/fgo_account_actions.py — для каждого слуги заново сканировались
-     большие мастер-таблицы (O(N*M)): у авторов правки "Max All Servants" не влезал
-     в 60-секундный таймаут GUI (81.85 с до правки, 5.04 с после). Таблицы
-     индексируются один раз. На нашей машине (120 слуг, локальный диск) обе
-     версии укладываются в 8 с — правка оставлена ради переносимости,
-     не как обязательная.
+  1) Server/tools/fgo_account.py - the CLI printed INFO logs before its JSON, so the launcher
+     showed "bad_output: [INFO] ... {json}" on the Account page (upgrading Servants, granting
+     materials, renaming). Now the config is always read, the log level is raised to warning,
+     and when the profile is not isolated a temporary fgo.yaml is created next to it -
+     otherwise the warning never reaches the servlet.
+  2) Server/tools/fgo_account_actions.py - the big master tables were rescanned for every
+     Servant (O(N*M)): "Max All Servants" did not fit the GUI's 60-second timeout for the
+     authors (81.85 s before, 5.04 s after). The tables are indexed once now. On this machine
+     (120 Servants, local disk) both versions finish in about 8 s, so the fix is carried
+     for portability rather than need,
+     for portability rather than need, and not because it was required.
 
-Файлы восстановимы из архива 前端 — патч не трогает ничего, кроме этих двух мест,
-и на повторном запуске просто ничего не делает.
+The files are recoverable from the 前端 archive - the patch touches nothing but those two
+places and does nothing at all on a re-run.
 
-Правки текстовые и идемпотентные: если кусок уже заменён — правило пропускается,
-если исходный текст не найден — файл не трогаем и сообщаем об этом.
+The edits are textual and idempotent: an already replaced block is skipped, and when the
+original text is not found the file is left alone and reported.
 
-  python3 patch-server.py <install_root>            # план
-  python3 patch-server.py <install_root> --apply    # накатить
-  python3 patch-server.py <install_root> --verify   # сверить, что наложено
+  python3 patch-server.py <install_root>            # plan
+  python3 patch-server.py <install_root> --apply    # apply
+  python3 patch-server.py <install_root> --verify   # check what is applied
 """
 import os
 import sys
@@ -74,7 +74,7 @@ ACTIONS_INDEXES = """        np_rows = rows('np', 'svt_noble_phantasm') if actio
 
 """
 
-# (файл, что ищем, на что меняем, признак «уже наложено»)
+# (file, what we look for, what we replace it with, the "already applied" marker)
 RULES = [
     (ACCOUNT,
      """    config_dir = ARTEMIS_DIR / "config"
@@ -137,7 +137,7 @@ def main():
     for i, (rel, old, new, marker) in enumerate(RULES, 1):
         path = os.path.join(root, rel)
         if not os.path.isfile(path):
-            problems.append(f"нет файла {rel} — пропускаю правило {i}")
+            problems.append(f"no such file {rel} - skipping rule {i}")
             continue
         data = open(path, "rb").read()
         crlf = b"\r\n" in data
@@ -146,10 +146,10 @@ def main():
             present += 1
             continue
         if old_b not in data:
-            problems.append(f"{rel}: не нашла исходный текст правила {i} — файл другой версии?")
+            problems.append(f"{rel}: the original text of rule {i} was not found - another version?")
             continue
         if mode == "verify":
-            problems.append(f"{rel}: правило {i} не наложено")
+            problems.append(f"{rel}: rule {i} is not applied")
             continue
         if mode == "plan":
             applied += 1
@@ -158,12 +158,12 @@ def main():
             fh.write(data.replace(old_b, new_b))
         applied += 1
 
-    print(f"режим: {mode}")
-    print(f"  серверные правки: наложено сейчас {applied}, уже было {present}, всего правил {len(RULES)}")
+    print(f"mode: {mode}")
+    print(f"  server-side fixes: applied now {applied}, already present {present}, rules {len(RULES)}")
     if mode == "plan":
-        print("  ничего не изменено; для наката добавь --apply")
+        print("  nothing was changed; add --apply to apply")
     if problems:
-        print(f"  проблемы ({len(problems)}):")
+        print(f"  problems ({len(problems)}):")
         for line in problems:
             print("    " + line)
     return 1 if problems else 0

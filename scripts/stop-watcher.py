@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Сторож сервера: пока жив лончер — ничего не делает, вышел — останавливает сервер.
+"""Server watcher: does nothing while the launcher lives, stops the server when it exits.
 
-Запускается detached из хендлера Stop-FGOLocalServerWhenIdle (своя сессия, вывод в
-/tmp/fgoa-server-watch.log), поэтому лончеру не мешает и его пайпы не держит.
+Started detached from the Stop-FGOLocalServerWhenIdle handler (its own session, output to
+/tmp/fgoa-server-watch.log), so it does not get in the launcher's way or hold its pipes.
 """
 import os
 import subprocess
@@ -16,7 +16,7 @@ MAX_LIFETIME = 24 * 3600
 
 
 def launcher_alive():
-    # [.] внутри шаблона — чтобы pgrep не нашёл сам себя по своему же аргументу
+    # [.] inside the pattern so pgrep does not match its own argument
     return subprocess.run(["pgrep", "-f", "FGOAC scooby[.]exe"],
                           stdout=subprocess.DEVNULL).returncode == 0
 

@@ -1,22 +1,22 @@
 #!/usr/bin/env python3
-"""Накладывает английский набор FGOAC scooby прямо на файлы игры.
+"""Applies the FGOAC scooby English dataset straight onto the game's files.
 
-Хук App\\zh\\fgozh.dll под Wine падает в DllMain: ntdll не экспортирует
-NtQueryInformationByName, fgozh.dll считает это фатальным и возвращает FALSE — inject.exe
-после этого убивает игру. Фаза 0 снимает это пятью байтами (идея и смещение:
-yana-arch/FGOAC-scooby-linux, ветка linux-support), и дальше хук грузится сам.
-Пока хук не загружен (или если его снова сломает новая сборка), работает обход —
-делаем то же самое заранее:
-  1) ресурсы: App/zh/<путь> -> App/<путь>, список берём из App/zh/text-outputs.json;
-  2) строки внутри ago.exe: правка по смещениям из App/zh/executable-text.json (utf-8,
-     английский всегда короче японского, поэтому влезает на место, хвост добивается нулями).
+The App\\zh\\fgozh.dll hook dies in DllMain under Wine: ntdll does not export
+NtQueryInformationByName, fgozh.dll treats that as fatal and returns FALSE, after which
+inject.exe kills the launch. Phase 0 removes that with five bytes (idea and offset:
+yana-arch/FGOAC-scooby-linux, branch linux-support), and the hook then loads by itself.
+While the hook does not load (or when a future build breaks it again) the workaround runs:
+we do the same thing ahead of time:
+  1) resources: App/zh/<path> -> App/<path>, the list comes from App/zh/text-outputs.json;
+  2) strings inside ago.exe: patched at the offsets from App/zh/executable-text.json
+     (English is always shorter than Japanese, so it fits and the tail is zero-padded).
 
-Бэкапы не перезаписываются, так что повторный запуск сохраняет именно оригинал:
-  заменённые файлы -> _en-overlay-backup/<путь>, ago.exe -> App/ago.exe.en-overlay.bak
+Backups are never overwritten, so a re-run still keeps the true original:
+  replaced files -> _en-overlay-backup/<path>, ago.exe -> App/ago.exe.en-overlay.bak
 
-  python3 fgoa_apply_en.py <install_root>            # показать план (ничего не меняет)
-  python3 fgoa_apply_en.py <install_root> --apply    # накатить
-  python3 fgoa_apply_en.py <install_root> --verify   # сверить, что уже наложено
+  python3 apply-en.py <install_root>                 # show the plan (changes nothing)
+  python3 apply-en.py <install_root> --apply         # apply
+  python3 apply-en.py <install_root> --verify        # check what is already applied
 """
 import hashlib
 import json
@@ -27,12 +27,12 @@ import time
 
 BACKUP_DIR = "_en-overlay-backup"
 
-# Эти два файла правит patch-server.py (правки из yana-arch). Их сверяет его собственный
-# --verify, а копия payload не должна их перезаписывать: иначе повторный накат английского
-# (кнопка Apply EN patch в лончере) возвращал бы их к исходному виду.
+# These two files are patched by patch-server.py (fixes from yana-arch). Its own --verify
+# checks them, and the payload copy must not overwrite them: otherwise applying English
+# again (the launcher's Apply EN patch button) would restore them to the pristine state.
 SERVER_PATCHED = {"Server/tools/fgo_account.py", "Server/tools/fgo_account_actions.py"}
 
-# 5 байт в App\\zh\\fgozh.dll: mov eax,0Ch (MH_ERROR_FUNCTION_NOT_FOUND) -> xor eax,eax
+# 5 bytes in App\\zh\\fgozh.dll: mov eax,0Ch (MH_ERROR_FUNCTION_NOT_FOUND) -> xor eax,eax
 FGOZH_REL = "App/zh/fgozh.dll"
 FGOZH_OFFSET = 0x19E99
 FGOZH_ABORT = bytes.fromhex("b80c000000")
@@ -53,8 +53,8 @@ def sha256_bytes(data):
 
 
 def fgozh_ok(data, expected):
-    """Манифест описывает нетронутый fgozh.dll; после патча хука файл сверяем,
-    откатив пять байт на место — иначе проверка payload всегда будет ругаться."""
+    """The manifest describes a pristine fgozh.dll; once the hook is patched the file is
+    checked with those five bytes rolled back, or the payload check would always complain."""
     if sha256_bytes(data) == expected:
         return True
     if data[FGOZH_OFFSET:FGOZH_OFFSET + 5] == FGOZH_PATCHED:
@@ -65,24 +65,24 @@ def fgozh_ok(data, expected):
 
 
 def patch_fgozh(root, mode):
-    """Фаза 0: разрешить fgozh.dll грузиться под Wine (см. модульный докстринг).
-    -> (состояние, проблемы)
+    """Phase 0: let fgozh.dll load under Wine (see the module docstring).
+    -> (state, problems)
     """
     path = os.path.join(root, FGOZH_REL)
     if not os.path.isfile(path):
-        return "нет файла", []
+        return "no such file", []
     data = open(path, "rb").read()
     head = data[FGOZH_OFFSET:FGOZH_OFFSET + 5]
     if head == FGOZH_PATCHED:
-        return "хук грузится (пропатчен)", []
+        return "hook loads (patched)", []
     if head != FGOZH_ABORT:
-        return ("неизвестная сборка",
-                [f"fgozh.dll: на {hex(FGOZH_OFFSET)} не то, что ожидалось ({head.hex()}) — "
-                 "патч хука не наложен, перевод работает обходным путём"])
+        return ("unknown build",
+                [f"fgozh.dll: {hex(FGOZH_OFFSET)} holds {head.hex()} instead of the expected "
+                 "bytes - the hook is not patched, English runs through the workaround"])
     if mode == "verify":
-        return "не пропатчен", ["fgozh.dll: патч хука не наложен — английский идёт обходом"]
+        return "not patched", ["fgozh.dll: the hook is not patched - English runs via the workaround"]
     if mode != "apply":
-        return "будет пропатчен", []
+        return "will be patched", []
     backup_path = path + ".wine-hook.bak"
     if not os.path.exists(backup_path):
         shutil.copy2(path, backup_path)
@@ -90,7 +90,7 @@ def patch_fgozh(root, mode):
     patched[FGOZH_OFFSET:FGOZH_OFFSET + 5] = FGOZH_PATCHED
     with open(path, "wb") as fh:
         fh.write(patched)
-    return "пропатчен (хук теперь грузится)", []
+    return "patched (the hook now loads)", []
 
 
 def read_json(path):
@@ -99,7 +99,7 @@ def read_json(path):
 
 
 def backup(root, rel, dry_run):
-    """Сохраняет оригинал файла один раз."""
+    """Keeps the original file once."""
     src = os.path.join(root, rel)
     dst = os.path.join(root, BACKUP_DIR, rel)
     if not os.path.isfile(src) or os.path.exists(dst):
@@ -111,7 +111,7 @@ def backup(root, rel, dry_run):
 
 
 def overlay_files(root, rels, mode):
-    """mode: plan | apply | verify -> (копий, бэкапов, проблем)."""
+    """mode: plan | apply | verify -> (copied, backups, problems)."""
     copied = backups = 0
     problems = []
     for rel in rels:
@@ -119,12 +119,12 @@ def overlay_files(root, rels, mode):
         rel_norm = rel.replace("\\", "/")
         dst = os.path.join(root, "App", rel_norm)
         if not os.path.isfile(src):
-            problems.append(f"нет источника: App/zh/{rel_norm}")
+            problems.append(f"missing source: App/zh/{rel_norm}")
             continue
         if mode == "verify":
             if not os.path.isfile(dst) or hashlib.sha256(open(dst, "rb").read()).digest() != \
                     hashlib.sha256(open(src, "rb").read()).digest():
-                problems.append(f"не наложено: App/{rel_norm}")
+                problems.append(f"not overlaid: App/{rel_norm}")
             else:
                 copied += 1
             continue
@@ -140,7 +140,7 @@ def overlay_files(root, rels, mode):
 
 
 def overlay_exe_strings(root, mode):
-    """Правка строк внутри ago.exe. -> (правок, пропусков, пустых, проблем)."""
+    """Patches the strings inside ago.exe. -> (patched, skipped, empty, problems)."""
     exe = os.path.join(root, "App", "ago.exe")
     table = read_json(os.path.join(root, "App", "zh", "executable-text.json"))
     data = bytearray(open(exe, "rb").read())
@@ -156,36 +156,36 @@ def overlay_exe_strings(root, mode):
     for off, jp, en in entries:
         raw_jp, raw_en = jp.encode("utf-8"), en.encode("utf-8")
         if not raw_en or raw_en == raw_jp:
-            # Пустой или совпадающий перевод — хук такие записи не трогает
-            # (среди них исходники GLSL-шейдеров и одиночные каны).
+            # An empty or identical translation is left alone by the hook too
+            # (those entries include GLSL shader sources and lone kana).
             empty += 1
             continue
         if off < prev_end:
-            problems.append(f"перекрытие смещений на {off}")
+            problems.append(f"overlapping offsets at {off}")
             skipped += 1
             continue
         if mode == "verify":
-            # после наката на месте английский текст, а не японский оригинал
+            # after patching the English text sits there, not the Japanese original
             if data[off:off + len(raw_en)] == raw_en and data[off + len(raw_en)] == 0:
                 patched += 1
             else:
-                problems.append(f"не пропатчено: {off}")
+                problems.append(f"not patched: {off}")
             prev_end = off + len(raw_jp)
             continue
         if data[off:off + len(raw_en)] == raw_en and data[off + len(raw_en)] == 0:
-            patched += 1          # уже наложено — повторный запуск безопасен
+            patched += 1          # already applied - a re-run is safe
             prev_end = off + len(raw_jp)
             continue
         if data[off:off + len(raw_jp)] != raw_jp:
-            problems.append(f"по смещению {off} не то, что ожидалось")
+            problems.append(f"offset {off} does not hold what was expected")
             skipped += 1
             continue
         if data[off + len(raw_jp)] != 0:
-            problems.append(f"строка на {off} не терминирована нулём")
+            problems.append(f"the string at {off} is not NUL-terminated")
             skipped += 1
             continue
         if len(raw_en) > len(raw_jp):
-            problems.append(f"английский длиннее на {off} ({len(raw_en)}>{len(raw_jp)})")
+            problems.append(f"English is longer at {off} ({len(raw_en)}>{len(raw_jp)})")
             skipped += 1
             continue
         prev_end = off + len(raw_jp)
@@ -208,12 +208,12 @@ def manifest_ok(rel, dst, expected):
 
 
 def overlay_list(root):
-    """Список файлов, которые подменяет хук.
+    """The list of files the hook overrides.
 
-    Это text-outputs.json (текстовые/данные) плюс 240 перерисованных спрайтов
-    rom/sprite/*.farc — вместе ровно 1683, то есть тот самый REDIRECT_INDEX,
-    который хук печатает в logs/fgozh.log. Шрифт rom/font/* хук не подменяет
-    (в наборе лежит CJK-шрифт его китайской сборки) — оставляем родной.
+    That is text-outputs.json (text/data) plus the 240 redrawn sprite archives in
+    rom/sprite/*.farc - exactly 1683 together, the very REDIRECT_INDEX the hook
+    prints into logs/fgozh.log. rom/font/* is not overridden by the hook either
+    (the dataset carries the CJK font of his Chinese build) - the original stays.
     """
     rels = {r.replace("\\", "/") for r in read_json(os.path.join(root, "App", "zh", "text-outputs.json"))}
     meta = {"fgozh.dll", "executable-text.json", "text-outputs.json", "en-patch.json"}
@@ -224,22 +224,22 @@ def overlay_list(root):
             if rel in meta or rel.startswith("rom/font/"):
                 continue
             if name.endswith((".bak", ".orig", ".wine-hook.bak")):
-                continue          # наши же бэкапы в App/zh не разносим по игре
+                continue          # our own backups in App/zh are not spread over the game
             rels.add(rel)
     return sorted(rels)
 
 
 def overlay_payload(root, mode):
-    """Фаза 1, как в оригинальном Apply-EN-Patch.ps1: скопировать payload/** в установку
-    и сверить каждый файл по manifest.json.
+    """Phase 1, as in the original Apply-EN-Patch.ps1: copy payload/** into the install
+    and verify every file against manifest.json.
 
-    Именно этот шаг кладёт английские файлы в App/zh/ (и EN-скрипты, и Server/tools).
-    Вторая фаза (overlay_files) потом разносит App/zh/** по родным путям игры — то, что
-    хук fgozh.dll делал бы в памяти.
+    This is the step that puts the English files into App/zh/ (and Server/tools).
+    Phase 2 (overlay_files) then spreads App/zh/** over the game's own paths - what the
+    fgozh.dll hook would have done in memory.
     """
     payload = os.path.join(root, "payload")
     if not os.path.isdir(payload):
-        return 0, 0, 0, ["нет папки payload — английский набор не приложен"]
+        return 0, 0, 0, ["no payload folder - the English dataset was not shipped"]
     manifest = read_json(os.path.join(root, "manifest.json"))
     files = manifest["files"]
     copied, separate, problems = 0, 0, []
@@ -247,32 +247,32 @@ def overlay_payload(root, mode):
         rel = rel.replace("\\", "/")
         src, dst = os.path.join(payload, rel), os.path.join(root, rel)
         if rel in SERVER_PATCHED and mode == "verify":
-            # их правит patch-server.py, и он же их проверяет: после его правки файл
-            # намеренно расходится с манифестом
+            # patch-server.py patches them and verifies them: once patched the file
+            # deliberately differs from the manifest
             separate += 1
             continue
         from_payload = os.path.isfile(src)
         if rel in SERVER_PATCHED:
-            # их правит patch-server.py, и он же их проверяет: не затираем уже наложенное
-            # (иначе кнопка Apply EN patch в лончере откатывала бы серверные правки)
+            # patch-server.py patches and verifies them: do not clobber what is applied
+            # (otherwise the launcher's Apply EN patch button would roll them back)
             copied += 1
             continue
         if not from_payload:
-            # часть манифеста (сам FGOAC scooby.exe) лежит прямо в корне — только сверяем
+            # part of the manifest (FGOAC scooby.exe itself) sits in the root - verify only
             if mode == "verify" or os.path.isfile(dst):
                 if os.path.isfile(dst) and manifest_ok(rel, dst, expected):
                     copied += 1
                 else:
-                    problems.append(f"не совпадает с манифестом: {rel}")
+                    problems.append(f"does not match the manifest: {rel}")
             continue
         if mode == "verify":
             if os.path.isfile(dst) and manifest_ok(rel, dst, expected):
                 copied += 1
             else:
-                problems.append(f"не совпадает с манифестом: {rel}")
+                problems.append(f"does not match the manifest: {rel}")
             continue
         if sha256(src) != expected:
-            problems.append(f"хэш payload не сходится: {rel}")
+            problems.append(f"payload hash mismatch: {rel}")
             continue
         os.makedirs(os.path.dirname(dst), exist_ok=True)
         shutil.copyfile(src, dst)
@@ -284,9 +284,9 @@ def main():
     root = os.path.abspath(sys.argv[1])
     mode = "verify" if "--verify" in sys.argv else ("apply" if "--apply" in sys.argv else "plan")
     payload_copied, manifest_total, payload_separate, payload_problems = overlay_payload(root, mode)
-    # патч хука строго после копии payload: она возвращает файл к нетронутому виду
+    # the hook patch strictly after the payload copy: that restores the pristine file
     fgozh_state, fgozh_problems = patch_fgozh(root, mode)
-    # список оверлея строим ПОСЛЕ payload: только он кладёт в App/zh спрайты и прочее
+    # the overlay list is built AFTER the payload: only it puts sprites into App/zh
     rels = overlay_list(root)
     copied, backups, problems = overlay_files(root, rels, mode)
     patched, skipped, empty, exe_problems = overlay_exe_strings(root, mode)
@@ -301,9 +301,9 @@ def main():
                 with open(cfg_path, "w", encoding="utf-8") as fh:
                     json.dump(cfg, fh, ensure_ascii=False, indent=2)
                     fh.write("\n")
-                print("  chineseEnabled=true в App/fgo-launcher.json (игра читает App\\zh)")
+                print("  chineseEnabled=true in App/fgo-launcher.json (the game reads App\\zh)")
         except (OSError, ValueError) as exc:
-            print(f"  не удалось выставить chineseEnabled: {exc}")
+            print(f"  could not set chineseEnabled: {exc}")
         manifest = read_json(os.path.join(root, "manifest.json"))
         marker = {"version": manifest.get("version"),
                   "appliedUtc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
@@ -313,21 +313,21 @@ def main():
         with open(marker_path, "w", encoding="utf-8") as fh:
             json.dump(marker, fh, ensure_ascii=False, indent=2)
             fh.write("\n")
-        print(f"  маркер: App/zh/en-patch.json (версия {marker['version']})")
+        print(f"  marker: App/zh/en-patch.json (version {marker['version']})")
 
-    print(f"режим: {mode}")
-    print(f"  payload по манифесту: {payload_copied}/{manifest_total - payload_separate} файлов"
-          + (f"  (+{payload_separate} правит patch-server.py)" if payload_separate else ""))
-    print(f"  хук zh (fgozh.dll):  {fgozh_state}")
-    print(f"  ресурсов обработано: {copied}/{len(rels)}  (бэкапов создано: {backups})")
-    print(f"  строк в ago.exe:     {patched}  (пропущено: {skipped}, пустой перевод: {empty})")
+    print(f"mode: {mode}")
+    print(f"  payload per manifest: {payload_copied}/{manifest_total - payload_separate} files"
+          + (f"  (+{payload_separate} patched by patch-server.py)" if payload_separate else ""))
+    print(f"  zh hook (fgozh.dll): {fgozh_state}")
+    print(f"  resources overlaid:  {copied}/{len(rels)}  (backups created: {backups})")
+    print(f"  strings in ago.exe:  {patched}  (skipped: {skipped}, empty translation: {empty})")
     all_problems = payload_problems + fgozh_problems + problems + exe_problems
     if all_problems:
-        print(f"  проблемы ({len(all_problems)}):")
+        print(f"  problems ({len(all_problems)}):")
         for line in all_problems[:15]:
             print("    " + line)
     if mode == "plan":
-        print("  ничего не изменено; для наката добавь --apply")
+        print("  nothing was changed; add --apply to apply")
     return 1 if all_problems else 0
 
 

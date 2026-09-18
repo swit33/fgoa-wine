@@ -1,29 +1,29 @@
 /*
- * pwsh.exe — PE-стаб для лончера FGOAC scooby под Wine.
+ * pwsh.exe — a thin PE stub for the FGOAC scooby launcher under Wine.
  *
- * Зачем: сам шим — bash-скрипт, а Wine запускает его как *unix*-процесс. CreateProcessA
- * при этом отдаёт PE-процесс-обёртку, который завершается мгновенно, пока bash живёт
- * своей жизнью: WaitForSingleObject возвращается сразу, .NET-лончер видит «скрипт
- * кончился», снимает флаг serverConfiguring и сбрасывает статус на
- * «Server ports down/down/down» — хотя сервер в этот момент как раз поднимается.
+ * Why it exists: the shim itself is a bash script, and Wine runs it as a *unix* process.
+ * CreateProcessA therefore returns a PE wrapper process that exits instantly while bash
+ * keeps running on its own: WaitForSingleObject returns at once, the .NET launcher sees
+ * "the script is done", clears serverConfiguring and drops the server status back to
+ * "Server ports down/down/down" — exactly while the server is coming up.
  *
- * Поэтому стаб кладёт шиму в командную строку файл-отметку
+ * So the stub passes the shim a completion file in its command line
  *
  *     --fgoa-done Z:\tmp\fgoa-shim-<pid>.exit
  *
- * и ждёт, пока файл появится: шим пишет туда свой код возврата (trap EXIT). Пока файла
- * нет, стаб жив, и лончер ждёт ровно столько, сколько работает хендлер. Потоки при этом
- * остаются прежними — лончер стримит наш вывод к себе, как и раньше.
+ * and waits for that file to appear: the shim writes its exit code there (trap EXIT).
+ * While the file is missing the stub stays alive, so the launcher waits exactly as long as
+ * the handler works. The std handles stay untouched — the launcher still streams our output.
  *
- * Путь к bash-шиму берётся из файла рядом с exe (pwsh-stub.ini, строка "shim=..."),
- * иначе — из FGOA_SHIM_SCRIPT, иначе из встроенного при сборке значения.
+ * The path to the bash shim comes from a file next to the exe (pwsh-stub.ini, a "shim=..."
+ * line), otherwise from FGOA_SHIM_SCRIPT, otherwise from the value compiled in.
  */
 #include <windows.h>
 #include <string.h>
 
 #define BUFSIZE 32768
 #define POLL_MS 50
-#define POLL_TRIES 36000          /* 30 минут: дольше ни один вызов лончера не живёт */
+#define POLL_TRIES 36000          /* 30 minutes: no launcher call lives longer than that */
 
 static char shim_path[MAX_PATH * 4] = FGOA_SHIM_SCRIPT;
 
@@ -126,7 +126,7 @@ static int read_done_file(const char *path, int *value) {
 int main(void) {
     char *cmd = GetCommandLineA();
     char *rest = cmd;
-    /* пропускаем имя нашего exe (оно может быть в кавычках) */
+    /* skip the name of our own exe (it may be quoted) */
     while (*rest == ' ' || *rest == '\t') {
         rest++;
     }
@@ -150,7 +150,7 @@ int main(void) {
     lstrcpynA(done_path, "Z:\\tmp\\fgoa-shim-", sizeof(done_path));
     append_ulong(done_path, (unsigned long)GetCurrentProcessId());
     lstrcatA(done_path, ".exit");
-    DeleteFileA(done_path);          /* если остался от прошлого раза */
+    DeleteFileA(done_path);          /* in case it is left over from a previous run */
 
     char line[BUFSIZE];
     lstrcpynA(line, "\"", sizeof(line));
@@ -165,7 +165,7 @@ int main(void) {
     ZeroMemory(&si, sizeof(si));
     si.cb = sizeof(si);
     si.dwFlags = STARTF_USESTDHANDLES;
-    /* отдаём bash-шиму наши же стандартные потоки: лончер их перенаправляет к себе */
+    /* hand the bash shim our own standard streams: the launcher redirects them to itself */
     si.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
     si.hStdOutput = GetStdHandle(STD_OUTPUT_HANDLE);
     si.hStdError = GetStdHandle(STD_ERROR_HANDLE);
@@ -180,7 +180,7 @@ int main(void) {
     CloseHandle(pi.hThread);
     CloseHandle(pi.hProcess);
 
-    /* ждём отметку шима: процесса-обёртки для этого мало, она умирает сразу */
+    /* wait for the shim's marker: the process wrapper alone is no use, it dies at once */
     for (int i = 0; i < POLL_TRIES; i++) {
         int code = 0;
         if (read_done_file(done_path, &code)) {

@@ -1,6 +1,6 @@
-# имя в реестре Windows | файл в этом каталоге
-# Нужны лончеру: app.xaml просит семейства "Segoe UI, Yu Gothic UI, Microsoft YaHei UI" и
-# "Cascadia Mono, Consolas". Свободные шрифты переименованы (nameID 1/16) через rename_font.py.
+# registry name in Windows | file in this folder
+# The launcher needs these: app.xaml asks for the families "Segoe UI, Yu Gothic UI, Microsoft YaHei UI" and
+# "Cascadia Mono, Consolas". Free fonts were renamed (nameID 1/16) with rename_font.py.
 Segoe UI (TrueType)|SegoeUI.ttf
 Segoe UI Bold (TrueType)|SegoeUI-Bold.ttf
 Segoe UI Italic (TrueType)|SegoeUI-Italic.ttf

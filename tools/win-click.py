@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Клик по окну Wine-приложения — для автоматизации лончера.
+"""Clicks inside a Wine application window - for driving the launcher.
 
-Компоновщик (Hyprland) в Wine-окно клики не доносит: `hl.dsp.send_shortcut` с mouse:272
-событие отправляет, но WPF его не видит. Поэтому кликаем изнутри: скрипт запускается их же
-Windows-питоном внутри Wine, где SetCursorPos + mouse_event дают настоящий клик.
+The compositor (Hyprland) does not deliver clicks into a Wine window: hl.dsp.send_shortcut
+with mouse:272 sends the event but WPF never sees it. So we click from the inside: the script runs
+under the platform's own Windows python inside Wine, where SetCursorPos + mouse_event clicks for real.
 
-Координаты — относительно КЛИЕНТСКОЙ области окна (то, что видно под заголовком).
+Coordinates are relative to the window's CLIENT area (what you see under the title bar).
 
   wine python.exe tools/win-click.py info  "FGOAC scooby"
   wine python.exe tools/win-click.py click "FGOAC scooby" 55 140
@@ -29,7 +29,7 @@ class POINT(ctypes.Structure):
 def find(title):
     hwnd = user32.FindWindowW(None, title)
     if not hwnd:
-        sys.exit(f"окно не найдено по заголовку: {title!r}")
+        sys.exit(f"no window found for title: {title!r}")
     return hwnd
 
 
@@ -55,9 +55,9 @@ def click(title, x, y):
     time.sleep(0.3)
     point = POINT(int(x), int(y))
     user32.ClientToScreen(hwnd, ctypes.byref(point))
-    # WPF надёжнее реагирует, если перед нажатием было движение мыши:
-    # ставим курсор, дёргаем его на пиксель туда-обратно и только потом жмём.
-    # Заходим на элемент издалека: WPF ждёт MouseMove на другой элемент, затем на этот
+    # WPF reacts more reliably when the mouse moved before the press:
+    # park the cursor, jiggle it by a pixel and only then press.
+    # Enter the element from afar: WPF wants a MouseMove on another element, then on this one
     user32.SetCursorPos(point.x - 60, point.y - 40)
     time.sleep(0.25)
     user32.SetCursorPos(point.x, point.y)
@@ -87,10 +87,10 @@ def move(title, x, y):
 
 
 def key(name):
-    """Отправить нажатие клавиши внутрь Wine (keybd_event). name: Enter, Space, F1 ..."""
+    """Send a key press into Wine (keybd_event). name: Enter, Space, F1 ..."""
     vk = {"enter": 0x0D, "space": 0x20, "f1": 0x70, "f2": 0x71, "esc": 0x1B}.get(name.lower())
     if vk is None:
-        sys.exit(f"неизвестная клавиша: {name}")
+        sys.exit(f"unknown key: {name}")
     user32.keybd_event(vk, 0, 0, 0)
     time.sleep(0.06)
     user32.keybd_event(vk, 0, 2, 0)

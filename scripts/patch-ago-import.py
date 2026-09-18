@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Замена имени функции в таблице импортов PE (x64).
+"""Renames an imported function in a PE file's import table (x64).
 
-Wine аборится на нереализованной заглушке USER32.SetWindowFeedbackSetting, которую
-ago.exe импортирует статически. Имя в таблице имён импорта меняется на существующий
-безвредный экспорт user32 (IsWindow: принимает HWND, ничего не делает, возвращает BOOL);
-хвост строки добивается нулями, длина сохраняется.
+Wine aborts on the unimplemented USER32.SetWindowFeedbackSetting stub that ago.exe imports
+statically. The name in the import name table is swapped for an existing harmless user32
+export (IsWindow: takes the HWND, does nothing, returns a BOOL); the tail of the string is
+NUL-padded and the length is preserved.
 
-  python3 patch_import.py ago.exe                                  # показать
+  python3 patch-ago-import.py ago.exe                              # show what would change
   python3 patch_import.py ago.exe SetWindowFeedbackSetting IsWindow --apply
 """
 import struct
@@ -17,7 +17,7 @@ def rva_to_off(sections, rva):
     for va, vsize, raw, rawsize in sections:
         if va <= rva < va + max(vsize, rawsize):
             return raw + (rva - va)
-    raise ValueError(f"rva {rva:#x} вне секций")
+    raise ValueError(f"rva {rva:#x} is outside the sections")
 
 
 def cstr(data, off):
@@ -26,11 +26,11 @@ def cstr(data, off):
 
 def sections_of(data):
     pe = struct.unpack_from("<I", data, 0x3C)[0]
-    assert data[pe:pe + 4] == b"PE\0\0", "не PE"
+    assert data[pe:pe + 4] == b"PE\0\0", "not a PE"
     nsec = struct.unpack_from("<H", data, pe + 6)[0]
     optsize = struct.unpack_from("<H", data, pe + 20)[0]
     opt = pe + 24
-    assert struct.unpack_from("<H", data, opt)[0] == 0x20B, "не PE32+ (x64)"
+    assert struct.unpack_from("<H", data, opt)[0] == 0x20B, "not PE32+ (x64)"
     out = []
     for i in range(nsec):
         off = pe + 24 + optsize + i * 40
@@ -40,7 +40,7 @@ def sections_of(data):
 
 
 def import_names(data, sections, ddir_index, entry_size, max_entries=64):
-    """Имена функций из обычного (ddir 1, по 20 байт) или delay (ddir 13, по 32) импорта."""
+    """Function names from a normal (ddir 1, 20 bytes each) or delay (ddir 13, 32) import."""
     opt, _ = sections_of(data)
     rva, size = struct.unpack_from("<II", data, opt + 112 + ddir_index * 8)
     if not rva:
@@ -86,10 +86,10 @@ def main():
     for entry, off in hits:
         print(f"{entry}: '{want}' @ {off} (0x{off:x})")
     if not hits:
-        print("в таблицах импорта не найдено")
+        print("not found in the import tables")
         return 1
     if not apply_:
-        print("сухой прогон; добавь --apply")
+        print("dry run; add --apply")
         return 0
 
     before = open(path, "rb").read()
@@ -99,7 +99,7 @@ def main():
         data = data[:off] + payload + data[off + len(want):]
     open(path + ".orig", "wb").write(before)
     open(path, "wb").write(data)
-    print(f"заменено: {len(hits)}; бэкап рядом: {path}.orig")
+    print(f"replaced: {len(hits)}; backup next to it: {path}.orig")
     return 0
 
 

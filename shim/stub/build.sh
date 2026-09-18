@@ -1,6 +1,6 @@
 #!/bin/bash
-# Сборка PE-стаба. winegcc --target=x86_64-windows использует заголовки и импортные
-# библиотеки Wine (mingw не нужен), на выходе — настоящий PE.
+# Builds the PE stub. winegcc --target=x86_64-windows uses Wine's own headers and import
+# libraries (no mingw needed) and produces a real PE.
 set -eu
 HERE="$(cd "$(dirname "$0")" && pwd)"
 SHIM_PATH="${1:-Z:$(cd "$HERE/.." && pwd)/pwsh-shim.sh}"

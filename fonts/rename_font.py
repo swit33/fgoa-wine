@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Переименование семейства в TTF (для Wine-префиксов под WPF).
+"""Renames the family inside a TTF (for Wine prefixes running WPF).
 
-WPF-приложение падает с FailFast, если не находит *ни одного* семейства из своего
-списка (у лончера: "Segoe UI, Yu Gothic UI, Microsoft YaHei UI" и "Cascadia Mono,
-Consolas"). Ни Wine, ни winetricks этих имён не дают, поэтому правим name-таблицу
-шрифта: имя семейства (nameID 1 и 16) меняется на нужное. Строка пишется на то же
-смещение и только укорачивается, поэтому остальные записи таблицы не съезжают.
+A WPF application dies with FailFast when it cannot find *any* family from its list (the
+launcher wants "Segoe UI, Yu Gothic UI, Microsoft YaHei UI" and "Cascadia Mono, Consolas").
+Neither Wine nor winetricks provides those names, so the font's name table is edited: the
+family name (nameID 1 and 16) is replaced. The string is written at the same offset and only
+ever shortened, so the other table entries do not shift.
 
   python3 rename_font.py --show  font.ttf
   python3 rename_font.py font.ttf out.ttf "Segoe UI"
@@ -15,7 +15,7 @@ import sys
 
 
 def name_records(data):
-    """(offset, nameID, платформа, язык, длина) для записей name-таблицы."""
+    """(offset, nameID, platform, language, length) for the name table records."""
     off = struct.unpack_from(">H", data, 4)[0]        # numTables
     name_off = None
     for i in range(off):
@@ -25,7 +25,7 @@ def name_records(data):
             name_off = struct.unpack_from(">I", data, base + 8)[0]
             break
     if name_off is None:
-        raise SystemExit("нет таблицы name")
+        raise SystemExit("no name table")
     count, storage = struct.unpack_from(">HH", data, name_off + 2)
     out = []
     for i in range(count):
@@ -53,11 +53,11 @@ def patch(path, out_path, new_family):
             continue
         payload = new_family.encode("utf-16-be" if plat in (0, 3) else "latin-1")
         if len(payload) > length:
-            print(f"  пропуск nameID {nid}: '{new_family}' длиннее '{old}'")
+            print(f"  skipping nameID {nid}: '{new_family}' is longer than '{old}'")
             continue
         data[soff:soff + len(payload)] = payload
         data[soff + len(payload):soff + length] = b"\0" * (length - len(payload))
-        struct.pack_into(">H", data, rec + 8, len(payload))   # length укорачивается, offset не трогаем
+        struct.pack_into(">H", data, rec + 8, len(payload))   # length shrinks, offset stays
         changed.append((nid, old))
     if out_path == "-":
         return changed
@@ -73,7 +73,7 @@ def main():
         return 0
     src, dst, family = sys.argv[1], sys.argv[2], sys.argv[3]
     changed = patch(src, dst, family)
-    print(f"{src} -> {dst}: семейство = '{family}' ({len(changed)} записей)")
+    print(f"{src} -> {dst}: family = '{family}' ({len(changed)} records)")
     return 0
 
 

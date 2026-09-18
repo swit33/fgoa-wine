@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
-"""Запуск FGO Arcade под Wine без PowerShell.
+"""Starts FGO Arcade under Wine without PowerShell.
 
-Читает App/fgo-launcher.json (режим экрана, разрешение, ввод, fps) и:
-  * пишет DEVICE\\runtime\\segatools.runtime.ini так, как это делал App\\FGO_Launcher.ps1
-    (абсолютные пути, план сети, [gfx]/[amvideo] из конфига, UTF-16);
-  * в режиме --print-args выдаёт sh-фрагмент с аргументами и переменными для инжектора;
-  * в режиме --run сам запускает игру через inject.exe.
+Reads App/fgo-launcher.json (screen mode, resolution, input, fps) and:
+  * writes DEVICE\\runtime\\segatools.runtime.ini the way App\\FGO_Launcher.ps1 did
+    (absolute paths, network plan, [gfx]/[amvideo] from the config, UTF-16);
+  * with --print-args prints an sh fragment with the injector's arguments and variables;
+  * with --run starts the game itself through inject.exe.
 
-  python3 launch.py <install_root>              # только сгенерировать runtime-ини
-  python3 launch.py <install_root> --print-args  # + показать параметры запуска
-  python3 launch.py <install_root> --run         # запустить игру (то же делает play.sh)
+  python3 launch.py <install_root>               # only generate the runtime INI
+  python3 launch.py <install_root> --print-args  # + show the launch parameters
+  python3 launch.py <install_root> --run         # start the game (play.sh does the same)
 
-Корень установки по умолчанию — $FGOA_ROOT (из ~/.config/fgoa-wine/config.env) или папка выше fgoa-wine.
+The install root defaults to $FGOA_ROOT (from ~/.config/fgoa-wine/config.env) or the folder above fgoa-wine.
 """
 import hashlib
 import json
@@ -20,12 +20,12 @@ import re
 import subprocess
 import sys
 
-# план сети для одиночного режима — App/FGO_LocalNetwork.ps1, Get-FgoNetworkPlan(auto)
+# network plan for standalone mode - App/FGO_LocalNetwork.ps1, Get-FgoNetworkPlan(auto)
 NET = dict(server="192.168.100.1", subnet="192.168.100.0", addrSuffix=11, routerSuffix=1,
            broadcast="127.0.0.1")
 PORTS = dict(http=777, billing=9999, aime=7777)
 
-# конфиг Mesa для шейдеров игры лежит рядом со скриптами, в ../drirc.d
+# the Mesa config for the game's shaders sits next to the scripts, in ../config/drirc.d
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_DIR = os.path.abspath(os.path.join(SCRIPT_DIR, os.pardir))
 DRIRC_DIR = os.path.join(REPO_DIR, "config", "drirc.d")
@@ -34,7 +34,7 @@ DEFAULT_ROOT = (os.environ.get("FGOA_ROOT")
 
 
 def option_value(argv, name):
-    """Значение опции вида --name value или --name=value."""
+    """Value of an option shaped --name value or --name=value."""
     for i, item in enumerate(argv):
         if item == name and i + 1 < len(argv):
             return argv[i + 1]
@@ -44,7 +44,7 @@ def option_value(argv, name):
 
 
 def native_render_argument(width, height):
-    """Выбор движкового режима — как в FGO_Launcher.ps1."""
+    """Picks the engine render mode - same as FGO_Launcher.ps1."""
     if width * 9 > height * 16:
         return "-wqhd"
     if width * 9 == height * 16:
@@ -57,9 +57,9 @@ def native_render_argument(width, height):
 
 
 def ensure_active_card(root):
-    """Игра берёт карту (аккаунт) из DEVICE/aime.txt. Если файл пуст, она заводит
-    «непривязанный» аккаунт 0xFFFFFFFF, на котором лончер потом падает. Если в профиле
-    есть аккаунт с валидным id — вписываем его код в карту сами.
+    """The game takes its card (account) from DEVICE/aime.txt. An empty file makes it create
+    the "unbound" account 0xFFFFFFFF, which the launcher then chokes on. When the profile
+    already holds an account with a valid id, we write its code into the card ourselves.
     """
     aime = os.path.join(root, "DEVICE", "aime.txt")
     try:
@@ -94,10 +94,10 @@ def load_config(root):
     mode = cfg.get("displayMode")
     if mode not in ("windowed", "borderless", "exclusive"):
         mode = "windowed" if cfg.get("windowed") else "exclusive"
-    # Роль кабинета: FGO_Launcher.ps1 берёт её из fgo-launcher.json и передаёт как -sm.
-    # "saved" (по умолчанию) = не передавать, игра возьмёт сохранённую у себя. Если там
-    # оказался Satellite (Sub Unit), клиент ждёт Location Server главного кабинета и
-    # показывает ERROR 8404 — тогда помогает "server" (Main Unit).
+    # Cabinet role: FGO_Launcher.ps1 takes it from fgo-launcher.json and passes it as -sm.
+    # "saved" (the default) means pass nothing and let the game use its own saved mode. When
+    # that mode is Satellite (Sub Unit) the client waits for the main cabinet's Location
+    # Server and shows ERROR 8404 - setting "server" (Main Unit) cures that.
     cabinet = cfg.get("cabinetMode")
     if cabinet not in ("server", "satellite"):
         cabinet = "saved"
@@ -111,7 +111,7 @@ def load_config(root):
 
 
 def set_ini(text, section, key, value):
-    """Правит key=... внутри [section]; создаёт секцию/ключ, если их нет."""
+    """Edits key=... inside [section], creating the section or key when missing."""
     lines = text.split("\r\n")
     header = re.compile(r"^\s*\[([^\]]+)\]")
     cur, sec_start, sec_end = None, None, len(lines)
@@ -139,13 +139,13 @@ def set_ini(text, section, key, value):
 def main():
     root = os.path.abspath(sys.argv[1] if len(sys.argv) > 1 else DEFAULT_ROOT)
     cfg = load_config(root)
-    # режим и разрешение могут прийти аргументами (лончер передаёт их в FGO_Launcher.ps1)
+    # mode and resolution may arrive as arguments (the launcher passes them to FGO_Launcher.ps1)
     for flag, key in (("--mode", "mode"), ("--width", "width"), ("--height", "height"),
                       ("--input", "input"), ("--fps", "fps")):
         value = option_value(sys.argv, flag)
         if value:
             cfg[key] = int(value) if key in ("width", "height", "fps") else value
-    # путь, каким его видит процесс внутри Wine: Z: == /
+    # the path a process inside Wine sees: Z: == /
     W = "Z:" + root.replace("/", "\\")
     install, game, device = W, W + "\\App", W + "\\DEVICE"
     windowed = cfg["mode"] != "exclusive"
@@ -186,25 +186,25 @@ def main():
         for key, value in keys.items():
             text = set_ini(text, section, key, value)
     os.makedirs(os.path.dirname(target), exist_ok=True)
-    # [Text.Encoding]::Unicode — UTF-16LE с BOM, иначе нативные хуки портят пути
+    # [Text.Encoding]::Unicode - UTF-16LE with BOM, or the native hooks mangle the paths
     with open(target, "w", encoding="utf-16", newline="") as fh:
         fh.write(text)
 
     card = ensure_active_card(root)
     if card is not None:
-        print(f"DEVICE/aime.txt был пуст — вписал карту аккаунта aime_id={card}")
+        print(f"DEVICE/aime.txt was empty - wrote the account card for aime_id={card}")
 
-    # Хук zh под Wine грузится только после патча из apply-en.py (5 байт в fgozh.dll:
-    # ntdll не экспортирует NtQueryInformationByName, и без патча DllMain возвращает FALSE).
-    # С патчем игра переводится самим хуком, как задумано автором; без него — обходом на файлах.
+    # The zh hook loads under Wine only after the patch applied by apply-en.py (5 bytes in
+    # fgozh.dll: ntdll does not export NtQueryInformationByName, and without the patch DllMain
+    # returns FALSE). With the patch the hook translates the game as the author intended.
     zh_path = os.path.join(root, "App", "zh", "fgozh.dll")
     zh_hook = False
     if os.path.isfile(zh_path):
         with open(zh_path, "rb") as fh:
             zh_hook = fh.read()[0x19E99:0x19E9E] == bytes.fromhex("31c0909090")
         if not zh_hook:
-            print("предупреждение: fgozh.dll не пропатчен — английский идёт обходом "
-                  "(наложен на файлы); запусти install.sh или apply-en.py --apply")
+            print("warning: fgozh.dll is not patched - English runs through the file overlay "
+                  "(no hook); run install.sh or apply-en.py --apply")
 
     env = {
         "SEGATOOLS_CONFIG_PATH": "Z:" + target.replace("/", "\\"),
@@ -216,13 +216,13 @@ def main():
         "FGO_LOCAL_AIME_PORT": str(PORTS["aime"]),
         "FGO_PRINT_METADATA_ONLY": "1",
         "FGO_ZH_ENABLED": "1" if zh_hook else "0",
-        # имя разделяемой памяти, куда лончер пишет колоду (формула из GameCommunication.cs)
+        # shared memory the launcher publishes the deck into (formula from GameCommunication.cs)
         "FGO_DECK_CHANNEL": "FGODeck_" + hashlib.sha256(
             game.rstrip("\\").upper().encode("utf-8")).hexdigest().upper(),
         "DRIRC_CONFIGDIR": DRIRC_DIR,
     }
     if not os.path.isdir(DRIRC_DIR):
-        print(f"предупреждение: нет конфига Mesa {DRIRC_DIR} — шейдеры игры скорее всего не соберутся",
+        print(f"warning: no Mesa config at {DRIRC_DIR} - the game's shaders will most likely fail",
               file=sys.stderr)
     if cfg["mode"] == "borderless":
         env["__COMPAT_LAYER"] = "DISABLEDXMAXIMIZEDWINDOWEDMODE"
@@ -234,7 +234,7 @@ def main():
         args += ["-k", G + "\\zh\\fgozh.dll"]
     args += [G + "\\ago.exe", native_render_argument(cfg["width"], cfg["height"])]
     if cfg["cabinet"] != "saved":
-        # как FGO_Launcher.ps1: -sm <server|satellite> идёт сразу после native-аргумента
+        # as in FGO_Launcher.ps1: -sm <server|satellite> goes right after the native argument
         args += ["-sm", cfg["cabinet"]]
     if windowed:
         args.append("-w")
