@@ -73,8 +73,10 @@ def main():
     try:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except OSError:
-        print("Another start is already in progress (server-start.lock is held): "
-              "waiting for it instead of starting a second MariaDB/ARTEMiS.", flush=True)
+        print("The local server is already being started by another press of Start "
+              "(server-start.lock is held): waiting for it instead of starting a second "
+              "MariaDB/ARTEMiS. Nothing else to do - this window stays busy until it answers.",
+              flush=True)
         if not wait_ports() or not health_ok():
             print("The start that held the lock did not finish in time. "
                   "See /tmp/mariadb.log and /tmp/artemis.log.", file=sys.stderr)
@@ -84,7 +86,9 @@ def main():
 
     try:
         began = time.time()
-        print("Starting the local server: MariaDB, then ARTEMiS ...", flush=True)
+        print("Starting the local server: MariaDB, then ARTEMiS. "
+              "This takes up to about 30 seconds after a stop - please do not press Start again: "
+              "this window stays busy until the server answers.", flush=True)
         code = common.run(["bash", common.script("server.sh")], timeout=240)
         if code != 0:
             print("The local server did not start. See /tmp/mariadb.log and /tmp/artemis.log.",

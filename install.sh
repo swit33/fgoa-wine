@@ -158,6 +158,13 @@ setup_prefix() {
         sleep 2
     fi
 
+    # Выпадающие списки лончера под Wine рисуются чёрными прямоугольниками: попап
+    # ComboBox объявлен AllowsTransparency="True", Wine укладывает его в layered-окно
+    # и теряет альфу. Софтверный рендеринг WPF эту дорожку обходит (проверено).
+    wine_run reg add 'HKCU\Software\Microsoft\Avalon.Graphics' /v DisableHWAcceleration \
+        /t REG_DWORD /d 1 /f >/dev/null 2>&1 \
+        && say "WPF переведён на софтверный рендеринг (иначе выпадающие списки чёрные)"
+
     mkdir -p "$CONFIG_DIR"
     cat > "$CONFIG" <<EOF
 # Конфиг fgoa-wine: читается шимом и хендлерами.
@@ -238,6 +245,11 @@ verify_all() {
         say "[OK]   шрифты зарегистрированы в реестре префикса"
     else
         say "[FAIL] шрифты не зарегистрированы (лончер упадёт на FailFast)"; fails=$((fails+1))
+    fi
+    if wine_run reg query 'HKCU\Software\Microsoft\Avalon.Graphics' /v DisableHWAcceleration 2>/dev/null | grep -q '0x1'; then
+        say "[OK]   выпадающие списки лончера (софтверный рендеринг WPF)"
+    else
+        say "[FAIL] WPF рисует с аппаратным ускорением — выпадающие списки будут чёрными"; fails=$((fails+1))
     fi
     if [ -r "$CONFIG" ]; then say "[OK]   конфиг шима: $CONFIG"; else say "[FAIL] нет $CONFIG"; fails=$((fails+1)); fi
     printf '\n'
