@@ -104,4 +104,7 @@ def main():
 
 
 if __name__ == "__main__":
+    if len(sys.argv) < 2:
+        print("usage: patch-ago-import.py <ago.exe> [old_import new_import] [--apply]")
+        raise SystemExit(2)
     sys.exit(main())

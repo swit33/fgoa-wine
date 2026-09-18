@@ -332,4 +332,7 @@ def main():
 
 
 if __name__ == "__main__":
+    if len(sys.argv) < 2:
+        print("usage: apply-en.py <install_root> [--apply | --verify]")
+        raise SystemExit(2)
     sys.exit(main())
