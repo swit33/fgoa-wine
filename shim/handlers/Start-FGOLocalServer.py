@@ -9,6 +9,12 @@
   * ждём порты (у оригинала Wait-TcpPort с таймаутом 30 с на порт);
   * и только потом объявляем готовность, после health-check'а ALL.Net ("Service OK").
 
+Тайминги важны. Лончер ждёт наш процесс не больше 120 секунд
+(MainWindow.ExecuteServerCommandAsync, TimeSpan.FromSeconds(start ? 120 : 50)), поэтому и
+удерживающий старт, и ожидающий чужой старт обязаны уложиться в это окно: если вернуть
+ненулевой код, лончер покажет «Server Did Not Start» и сбросит статус на
+«Server ports down/down/down». Отсюда HOLDER_TIMEOUT и WAIT_TIMEOUT ниже.
+
 Ненулевой код лончер показывает как «ошибку 10» (локальный сервер не поднялся).
 Аргумент -ServerHost игнорируем: адрес и порты заданы в конфигах установки
 (Server/mariadb.ini, artemis/config/core.yaml, App/segatools.ini).
@@ -26,7 +32,10 @@ import common  # noqa: E402
 HTTP_PORT = 777
 PORTS = (777, 9999, 7777)          # ALL.Net, billing, AimeDB
 PORT_TIMEOUT = 30                  # как Wait-TcpPort -TimeoutSeconds 30
+WAIT_TIMEOUT = 110                 # ожидание чужого старта; лончер терпит 120 с
+HOLDER_TIMEOUT = 105               # сколько даём server.sh на своём старте
 HEALTH_TIMEOUT = 5
+STALE_LOCK_SECONDS = 150           # лок без движения дольше этого — зависший старт
 
 
 def ready_message(seconds):
@@ -57,6 +66,61 @@ def wait_ports(timeout=PORT_TIMEOUT, quiet=False):
     return False
 
 
+def try_lock(path):
+    """-> (файл, True) если лок наш; (файл, False) если его держит кто-то другой.
+    Режим "a": open(..., "w") обнулил бы файл и обновил mtime, а по нему мы считаем
+    лок зависшим."""
+    handle = open(path, "a")
+    try:
+        fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        return handle, False
+    return handle, True
+
+
+def lock_is_stale(path):
+    """Лок без движения дольше STALE_LOCK_SECONDS — старт, который уже никуда не идёт."""
+    try:
+        return time.time() - os.path.getmtime(path) > STALE_LOCK_SECONDS
+    except OSError:
+        return False
+
+
+def start_server():
+    """Поднимаем сервер (лок уже наш). -> код возврата для лончера."""
+    began = time.time()
+    print("Starting the local server: MariaDB, then ARTEMiS. This takes up to about 30 seconds "
+          "after a stop - please do not press Start again, this window stays busy until the "
+          "server answers.", flush=True)
+    code = common.run(["bash", common.script("server.sh")], timeout=HOLDER_TIMEOUT)
+    if code != 0:
+        print("The local server did not start. See /tmp/mariadb.log and /tmp/artemis.log.",
+              file=sys.stderr)
+        return 10
+    # server.sh сам ждёт порты, здесь только добираем остаток и проверяем здоровье
+    if not wait_ports(timeout=5):
+        print("The local server did not open all of its ports in time.", file=sys.stderr)
+        return 10
+    if not health_ok():
+        print("The local ALL.Net service did not pass its health check (expected \"Service OK\").",
+              file=sys.stderr)
+        return 10
+    ready_message(time.time() - began)
+    return 0
+
+
+def wait_for_other_start():
+    """Сервер поднимает чужой запуск: ждём его, ничего не поднимая сами. -> код возврата."""
+    print("Another press of Start is already bringing the server up. Waiting for it - "
+          "nothing to do here, and this window stays busy until it answers.", flush=True)
+    if not wait_ports(WAIT_TIMEOUT) or not health_ok():
+        print(f"The start that was already running did not bring the server up within {WAIT_TIMEOUT}s. "
+              "See /tmp/mariadb.log, /tmp/artemis.log and logs/server-control.log.", file=sys.stderr)
+        return 10
+    ready_message(0)
+    return 0
+
+
 def main():
     argv = sys.argv[1:]
     common.log_call("Start-FGOLocalServer", argv)
@@ -69,41 +133,24 @@ def main():
         ready_message(0)
         return 0
 
-    lock = open(lock_path, "w")
-    try:
-        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except OSError:
-        print("The local server is already being started by another press of Start "
-              "(server-start.lock is held): waiting for it instead of starting a second "
-              "MariaDB/ARTEMiS. Nothing else to do - this window stays busy until it answers.",
-              flush=True)
-        if not wait_ports() or not health_ok():
-            print("The start that held the lock did not finish in time. "
-                  "See /tmp/mariadb.log and /tmp/artemis.log.", file=sys.stderr)
-            return 10
-        ready_message(0)
-        return 0
+    stale = lock_is_stale(lock_path)      # считаем до открытия, иначе mtime обновится
+    lock, ours = try_lock(lock_path)
+    if not ours and stale:
+        print(f"{os.path.basename(lock_path)} has not moved for more than {STALE_LOCK_SECONDS}s - "
+              "that start is not going anywhere. Taking over.", flush=True)
+        lock.close()
+        try:
+            os.unlink(lock_path)
+        except OSError:
+            pass
+        lock, ours = try_lock(lock_path)
+    if not ours:
+        lock.close()
+        return wait_for_other_start()
 
     try:
-        began = time.time()
-        print("Starting the local server: MariaDB, then ARTEMiS. "
-              "This takes up to about 30 seconds after a stop - please do not press Start again: "
-              "this window stays busy until the server answers.", flush=True)
-        code = common.run(["bash", common.script("server.sh")], timeout=240)
-        if code != 0:
-            print("The local server did not start. See /tmp/mariadb.log and /tmp/artemis.log.",
-                  file=sys.stderr)
-            return 10
-        # server.sh сам ждёт порты, здесь только добираем остаток и проверяем здоровье
-        if not wait_ports(timeout=5):
-            print("The local server did not open all of its ports in time.", file=sys.stderr)
-            return 10
-        if not health_ok():
-            print("The local ALL.Net service did not pass its health check (expected \"Service OK\").",
-                  file=sys.stderr)
-            return 10
-        ready_message(time.time() - began)
-        return 0
+        os.utime(lock_path, None)          # отметка живого старта
+        return start_server()
     finally:
         fcntl.flock(lock, fcntl.LOCK_UN)
         lock.close()
