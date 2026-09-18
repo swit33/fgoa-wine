@@ -1,26 +1,27 @@
 #!/bin/bash
-# fgoa-wine — установка FGO Arcade (Cloud23333 local platform) под Wine на Linux.
+# fgoa-wine — ставит наш слой на уже собранную папку игры FGO Arcade.
 #
-# Что делает (по шагам, всё идемпотентно):
-#   1) находит архивы-исходники (本体 Cloud23333, 前端 1.01 и 1.02, релиз лончера FGOAC scooby);
-#   2) распаковывает本体, кладёт его в корень установки, попутно исправляя имена частей,
-#      которые Google Drive переименовал (part1-003.rar -> part1.rar);
-#   3) накатывает 前端 1.01, затем 1.02, затем релиз лончера;
-#   4) применяет наш слой: импорт-патч ago.exe, перевод (патч хука fgozh.dll,
-#      1683 файла + строки в ago.exe), правки серверных инструментов;
-#   5) готовит Wine-префикс: создаёт его при необходимости, ставит шим вместо pwsh.exe,
+# Вход: папка игры, собранная снаружи (本体 Cloud23333 + 前端 1.02 + релиз лончера
+# FGOAC scooby). Признаки, которые скрипт проверяет: App/ago.exe, App/FGO_Runtime.dll
+# (он появляется с 前端 1.01), Server/tools/, payload/ + manifest.json и FGOAC scooby.exe.
+# Откуда игра взялась и в каких архивах лежала, скрипт не знает и знать не хочет.
+#
+# Что делает (идемпотентно):
+#   1) проверяет, что это та самая папка, и перечисляет, чего не хватает;
+#   2) наш слой: импорт-патч ago.exe, перевод (патч хука fgozh.dll, 1683 файла,
+#      строки в ago.exe), правки серверных инструментов;
+#   3) готовит Wine-префикс: создаёт при необходимости, ставит шим вместо pwsh.exe,
 #      ставит и регистрирует шрифты WPF, пишет конфиг шима;
-#   6) проверяет порты (ALL.Net 777 привилегированный; БД 8888, если занят — подбирает другой);
-#   7) прогоняет проверку и печатает, что делать дальше.
+#   4) конфиг Mesa для шейдеров игры (config/drirc.d);
+#   5) порты: ALL.Net 777 привилегированный (--sysctl), БД уходит с занятого 8888;
+#   6) проверяет результат и печатает, что делать дальше.
 #
-# Запуск (релиз лежит в папке установки, как <root>/fgoa-wine):
+# Запуск (релиз лежит в папке игры, как <root>/fgoa-wine):
 #   ./install.sh                       # корень по умолчанию — папка выше fgoa-wine
 #   ./install.sh --root /path/to/game  # явный корень
 #   ./install.sh --verify              # только проверить уже установленное
 #   ./install.sh --sysctl              # дополнительно разрешить порт 777 (нужен root)
-#   ./install.sh --sources /path/dir   # где искать архивы (можно несколько раз)
-#   ./install.sh --force               # перераспаковать本体 поверх существующего
-#   ./install.sh --skip-extract        # только слой/префикс, архивы не трогать
+#   ./install.sh --no-fonts | --no-shim | --prefix /path/to/prefix
 set -u
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -31,21 +32,17 @@ CONFIG="$CONFIG_DIR/config.env"
 TMPDIR_FGOA="${TMPDIR:-/tmp}/fgoa-wine-install"
 LOG="$TMPDIR_FGOA/install.log"
 
-DO_VERIFY=0; DO_SYSCTL=0; DO_FORCE=0; DO_EXTRACT=1; DO_FONTS=1; DO_SHIM=1
-SOURCES=()
+DO_VERIFY=0; DO_SYSCTL=0; DO_FONTS=1; DO_SHIM=1
 
 while [ $# -gt 0 ]; do
     case "$1" in
         --root)      ROOT="$2"; shift 2 ;;
         --prefix)    PREFIX="$2"; shift 2 ;;
-        --sources)   SOURCES+=("$2"); shift 2 ;;
-        --verify)    DO_VERIFY=1; DO_EXTRACT=0; DO_FONTS=0; DO_SHIM=0; shift ;;
+        --verify)    DO_VERIFY=1; DO_FONTS=0; DO_SHIM=0; shift ;;
         --sysctl)    DO_SYSCTL=1; shift ;;
-        --force)     DO_FORCE=1; shift ;;
-        --skip-extract) DO_EXTRACT=0; shift ;;
         --no-fonts)  DO_FONTS=0; shift ;;
         --no-shim)   DO_SHIM=0; shift ;;
-        -h|--help)   sed -n '2,26p' "$0"; exit 0 ;;
+        -h|--help)   sed -n '2,25p' "$0"; exit 0 ;;
         *) echo "неизвестный ключ: $1" >&2; exit 2 ;;
     esac
 done
@@ -61,7 +58,6 @@ need() { command -v "$1" >/dev/null 2>&1 || die "нужна команда '$1' 
 
 export WINEPREFIX="$PREFIX"
 export WINEDEBUG="${WINEDEBUG:--all}"
-PSWIN='C:\Program Files\PowerShell\7'
 FONTS_REG='HKLM\Software\Microsoft\Windows NT\CurrentVersion\Fonts'
 DB_DEFAULT_PORT=8888
 
@@ -73,94 +69,45 @@ free_port() {
     echo "$p"
 }
 
-# ---------------------------------------------------------------- исходники
-search_dirs() {
-    local d
-    for d in "${SOURCES[@]:-}" "$HERE" "$ROOT" "$(dirname "$ROOT")" "$HOME/Downloads" "$PWD"; do
-        [ -n "$d" ] && [ -d "$d" ] && echo "$d"
-    done
-}
+# ---------------------------------------------------------------- что на входе
+# Обязательные файлы. Последние два — метки того, что папка собрана до конца:
+# App/FGO_Runtime.dll приходит с 前端 1.01, payload/ и manifest.json — с релизом лончера.
+REQUIRED_FILES=(
+    'App/ago.exe' 'App/am/amdaemon.exe' 'App/fgohook.dll' 'App/inject.exe'
+    'App/config.json' 'App/segatools.ini' 'App/FGO_Runtime.dll'
+    'AMFS/ICF1' 'AMFS/ICF2'
+    'Server/python/python.exe' 'Server/mariadb.ini'
+    'Server/mariadb-10.11.16-winx64/bin/mariadbd.exe' 'Server/artemis/config/core.yaml'
+    'Server/tools/fgo_account.py'
+    'FGOAC scooby.exe' 'manifest.json' 'payload/App/zh/text-outputs.json'
+)
+# Что означает каждый из «меточных» файлов, если его нет.
+LAYOUT_HINTS=(
+    'App/FGO_Runtime.dll|на папку не накатан 前端 1.01/1.02'
+    'FGOAC scooby.exe|не распакован релиз лончера FGOAC scooby'
+    'manifest.json|не распакован релиз лончера FGOAC scooby'
+    'payload/App/zh/text-outputs.json|не распакован релиз лончера FGOAC scooby'
+)
 
-find_in_sources() {   # find_in_sources <glob> ... -> первый найденный путь
-    local pat d f
-    for pat in "$@"; do
-        for d in $(search_dirs); do
-            f=$(find "$d" -maxdepth 2 -iname "$pat" -not -path '*/_parts-normalized/*' 2>/dev/null | head -1)
-            [ -n "$f" ] && { echo "$f"; return 0; }
-        done
-    done
-    return 1
-}
-
-# Части本体: Google Drive мог переименовать их в partN-00X.rar -> собираем канонические имена
-normalize_parts() {
-    local dir="$TMPDIR_FGOA/parts"
-    rm -rf "$dir"; mkdir -p "$dir"
-    local n src
-    for n in 1 2 3 4 5; do
-        src=$(find_in_sources "FGOA_Cloud23333.part${n}.rar" "FGOA_Cloud23333.part${n}-*.rar" || true)
-        if [ -n "$src" ]; then
-            ln -sf "$src" "$dir/FGOA_Cloud23333.part${n}.rar" 2>/dev/null || cp -f "$src" "$dir/FGOA_Cloud23333.part${n}.rar"
-        fi
-    done
-    if [ ! -e "$dir/FGOA_Cloud23333.part5.rar" ]; then
-        local zip; zip=$(find_in_sources 'V1.00*.zip' || true)
-        if [ -n "$zip" ]; then
-            say "part5 беру из $(basename "$zip")"
-            unzip -o -j "$zip" 'V1.00/FGOA_Cloud23333.part5.rar' -d "$dir" >/dev/null || warn "не удалось достать part5 из zip"
-        fi
-    fi
-    [ -e "$dir/FGOA_Cloud23333.part1.rar" ] || die "не нашла части本体 (FGOA_Cloud23333.part1..5.rar). Укажи --sources <папка с архивами>"
-    echo "$dir"
-}
-
-# ---------------------------------------------------------------- распаковка
-extract_base() {
-    local parts; parts=$(normalize_parts)
-    local sizes; sizes=$(du -cbL --apparent-size "$parts"/*.rar | tail -1 | cut -f1)
-    say "本体: $(ls "$parts" | wc -l) часть(ей), $((sizes / 1024 / 1024 / 1024)) ГБ — распаковка займёт несколько минут"
-    mkdir -p "$ROOT"
-    ( cd "$parts" && unrar x -o+ -p"$RAR_PASSWORD" -idq FGOA_Cloud23333.part1.rar "$ROOT/" ) \
-        || die "unrar не смог распаковать本体 (пароль/целостность?)"
-}
-
-extract_frontend() {
-    local version="$1" glob="$2"
-    local zip; zip=$(find_in_sources "$glob" || true)
-    [ -n "$zip" ] || { warn "не нашла архив 前端 $version — пропускаю"; return 0; }
-    local dir="$TMPDIR_FGOA/fe$version"
-    rm -rf "$dir"; mkdir -p "$dir"
-    unzip -oq "$zip" -d "$dir" || die "не распаковался $zip"
-    local rar; rar=$(find "$dir" -name '*part1.rar' | head -1)
-    [ -n "$rar" ] || die "внутри $zip нет частей 前端"
-    say "前端 $version: распаковываю из $(basename "$zip")"
-    ( cd "$(dirname "$rar")" && unrar x -o+ -p"$RAR_PASSWORD" -idq "$(basename "$rar")" "$ROOT/" ) \
-        || die "unrar не смог распаковать 前端 $version"
-}
-
-extract_launcher() {
-    local zip; zip=$(find_in_sources 'FGOAC-scooby-v*.zip' || true)
-    [ -n "$zip" ] || die "не нашла релиз лончера (FGOAC-scooby-v*.zip)"
-    say "лончер: распаковываю $(basename "$zip")"
-    unzip -oq "$zip" -d "$ROOT" || die "не распаковался $zip"
-}
-
-check_required_files() {
-    local missing=() f
-    for f in 'App/ago.exe' 'App/am/amdaemon.exe' 'App/fgohook.dll' 'App/FGO_Runtime.dll' \
-             'App/inject.exe' 'App/config.json' 'App/segatools.ini' 'AMFS/ICF1' 'AMFS/ICF2' \
-             'DEVICE/runtime/segatools.runtime.ini' 'Server/python/python.exe' 'Server/mariadb.ini' \
-             'Server/mariadb-10.11.16-winx64/bin/mariadbd.exe' 'Server/artemis/config/core.yaml' \
-             'Server/tools/fgo_account.py' 'FGOAC scooby.exe'; do
+check_game_layout() {
+    local missing=() f hint
+    for f in "${REQUIRED_FILES[@]}"; do
         [ -e "$ROOT/$f" ] || missing+=("$f")
     done
-    if [ ${#missing[@]} -gt 0 ]; then
-        say "не хватает файлов:"
-        printf '  %s\n' "${missing[@]}"
-        return 1
+    if [ ${#missing[@]} -eq 0 ]; then
+        say "папка игры на месте: $(basename "$ROOT") ($(find "$ROOT/App" -maxdepth 1 -type f | wc -l) файлов в App)"
+        return 0
     fi
-    say "обязательные файлы на месте"
-    return 0
+    say "это не готовая папка игры — не хватает:"
+    for f in "${missing[@]}"; do
+        hint=""
+        for h in "${LAYOUT_HINTS[@]}"; do
+            [ "${h%%|*}" = "$f" ] && hint=" — ${h#*|}"
+        done
+        printf '  %s%s\n' "$f" "$hint"
+    done
+    printf '\nОжидается папка, где уже лежат: 本体 Cloud23333, поверх него 前端 1.02, поверх —\nрелиз лончера FGOAC scooby (zip распакован в эту же папку). Распаковкой скрипт не занимается:\nсобери такую папку снаружи и запусти установку заново.\n'
+    return 1
 }
 
 # ---------------------------------------------------------------- наш слой
@@ -268,13 +215,12 @@ setup_drirc() {
 verify_all() {
     local fails=0 f
     step "проверка"
-    for f in 'App/ago.exe' 'App/fgohook.dll' 'AMFS/ICF1' 'DEVICE/runtime/segatools.runtime.ini' \
-             'Server/python/python.exe' 'Server/mariadb.ini' 'FGOAC scooby.exe' \
-             'App/zh/en-patch.json' 'App/ago.exe.pristine'; do
+    for f in 'App/ago.exe' 'App/fgohook.dll' 'AMFS/ICF1' 'Server/python/python.exe' \
+             'Server/mariadb.ini' 'FGOAC scooby.exe' 'App/zh/en-patch.json' 'App/ago.exe.pristine'; do
         if [ -e "$ROOT/$f" ]; then say "[OK]   $f"; else say "[FAIL] нет $ROOT/$f"; fails=$((fails+1)); fi
     done
     if python3 "$HERE/scripts/apply-en.py" "$ROOT" --verify >/dev/null 2>&1; then
-        say "[OK]   перевод совпадает с манифестом"
+        say "[OK]   перевод на месте (хук zh + набор на диске)"
     else
         say "[FAIL] перевод не сходится — запусти install.sh заново"; fails=$((fails+1))
     fi
@@ -305,23 +251,18 @@ say "корень игры : $ROOT"
 say "префикс     : $PREFIX"
 say "лог         : $LOG"
 
-if [ "$DO_VERIFY" = 1 ]; then verify_all; exit $?; fi
-
-need wine; need python3; need unzip
-if [ "$DO_EXTRACT" = 1 ]; then need unrar; fi
-
-if [ "$DO_EXTRACT" = 1 ] && { [ "$DO_FORCE" = 1 ] || [ ! -f "$ROOT/App/ago.exe" ]; }; then
-    RAR_PASSWORD="${RAR_PASSWORD:-bilibili Cloud23333}"
-    step "распаковка本体"; extract_base
-    step "前端 1.01";     extract_frontend 1.01 'V1.01*.zip'
-    step "前端 1.02";     extract_frontend 1.02 'V1.02*.zip'
-    step "релиз лончера"; extract_launcher
-else
-    step "распаковка"; say "пропускаю (игра уже есть; --force чтобы перераспаковать)"
+if [ "$DO_VERIFY" = 1 ]; then
+    check_game_layout || exit 3
+    verify_all || true
+    exit $?
 fi
 
-step "проверка файлов установки"; check_required_files || die "установка неполная — проверь исходники"
-step "наш слой: патч ago.exe и перевод"; apply_our_layer
+need wine; need python3
+
+step "проверка папки игры"
+check_game_layout || die "собери папку игры (本体 + 前端 1.02 + релиз лончера) и запусти установку заново"
+
+step "наш слой: патч ago.exe, перевод, серверные правки"; apply_our_layer
 step "Wine-префикс"; setup_prefix
 step "Mesa drirc"; setup_drirc
 step "порты"; setup_ports

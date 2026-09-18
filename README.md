@@ -15,55 +15,47 @@ exists, where the fixes came from) lives in [`docs/`](docs/) — you do not need
 
 ## What you need
 
-**Four downloads** (none of them ship here):
+**A game folder that is already assembled** — the platform `本体` unpacked, `前端` **1.02** applied on
+top of it, and the **FGOAC scooby** release unpacked over that. This installer does not unpack
+anything: where the archives came from, in what format they were, and how they were merged is your
+business, not its. What it does check is that the folder really is at that stage — if
+`App/FGO_Runtime.dll`, `FGOAC scooby.exe`, `payload/` or `manifest.json` are missing it says so and
+stops.
 
-| Archive | What it is |
-| --- | --- |
-| `FGOA_Cloud23333.part1.rar` … `part5.rar` | the platform `本体` (23 GB, 56 353 files) |
-| `V1.01…zip` and `V1.02…zip` | Cloud23333's `前端` updates (each contains `.rar` parts) |
-| `FGOAC-scooby-v1.1.2.zip` | the English patch + launcher release |
+(Reference recipe, including the naming trap Google Drive creates, is in
+[`docs/INTERNALS.md`](docs/INTERNALS.md#assembling-the-game-folder). 1.02 is cumulative, so 1.01 does
+not have to be applied separately.)
 
-Archives renamed by Google Drive (`part1-003.rar` and similar) are fine — the installer links them
-back to canonical names; a `part5.rar` missing from the set is taken out of the `V1.00` zip.
-
-**On the machine:** Linux x86_64, `wine` (11.x used here), `unrar`, `unzip`, `python3`, ~35 GB free
-disk, a graphics driver that can do OpenGL 4.6 (Mesa works: a shim covers the NVIDIA-only extensions
-the game asks for), and **one `sudo`** for the privileged-port setting.
+**On the machine:** Linux x86_64, `wine` (11.x used here), `python3`, ~35 GB free disk, a graphics
+driver that can do OpenGL 4.6 (Mesa works: a shim covers the NVIDIA-only extensions the game asks
+for), and **one `sudo`** for the privileged-port setting.
 
 ## Install
 
-Keep this folder where it can find the archives, or point at them with `--sources`:
-
 ```bash
-# this folder may sit next to the archives, or become the game folder later
-./install.sh --sources /path/to/archives          # add --sysctl for the port-777 setting
+cp -a fgoa-wine /path/to/game/          # this folder becomes <game>/fgoa-wine
+/path/to/game/fgoa-wine/install.sh      # add --sysctl for the port-777 setting
 ```
+
+`install.sh` uses the folder above itself as the game root; `--root <dir>` overrides that, and
+`--verify` only checks an existing install without changing anything. Other flags: `--prefix <dir>`,
+`--sysctl`, `--no-fonts`, `--no-shim`. Re-running it is safe — every step is idempotent.
 
 The installer, in order:
 
-1. finds the archives (its own folder, the game folder, the parent, `~/Downloads`, or `--sources`);
-2. unpacks `本体`, then `前端` 1.01 and 1.02, then the scooby release;
-3. checks the files the platform needs;
-4. applies this project's layer — the `ago.exe` import fix, the English dataset, the two
-   server-side fixes;
-5. creates the Wine prefix and prepares it (the launcher's PowerShell shim, the WPF fonts and their
-   registry entries, `~/.config/fgoa-wine/config.env`);
-6. sets up the ports (warns, or with `--sysctl` fixes the privileged 777; moves the database off
-   8888 if something else holds it);
-7. verifies everything and prints what to do next.
-
-It is idempotent: re-running it with `--skip-extract` redoes only step 4, `--verify` checks an
-existing install and changes nothing, `--force` starts over.
+1. checks that the game folder is the one described above and lists what is missing if not;
+2. applies this project's layer — the `ago.exe` import fix, the English dataset (including the
+   `fgozh.dll` fix that makes the release's own English hook work under Wine), and two server-side
+   fixes;
+3. creates the Wine prefix if needed and prepares it — the launcher's PowerShell shim, the WPF fonts
+   **and their registry entries**, `~/.config/fgoa-wine/config.env`;
+4. sets up the Mesa config the game's shaders need;
+5. sets up the ports — warns (or with `--sysctl` fixes) the privileged 777, and moves the database off
+   8888 if something else holds it;
+6. verifies everything and prints what to do next.
 
 **Result to look for:** the last line reads `ИТОГ: всё на месте.` — then follow the numbered hints it
 prints.
-
-The usual layout is this folder *inside* the game folder (`<game>/fgoa-wine/`), which is also what
-the installer assumes when no `--root` is given:
-
-```bash
-cp -a fgoa-wine /path/to/game/ && /path/to/game/fgoa-wine/install.sh
-```
 
 ## First run
 
@@ -124,11 +116,9 @@ returns the same Servant — that is a config value, not a bug.
 
 ## Manual install (what the installer automates)
 
+With the game folder ready, the installer's own layer is these three commands:
+
 ```bash
-unrar x -o+ -p'<password>' FGOA_Cloud23333.part1.rar  <root>/     # after renaming the parts
-unzip -o V1.01-*.zip -d /tmp/fe101 && unrar x -o+ -p'<password>' /tmp/fe101/V1.01/*part1.rar <root>/
-unzip -o V1.02-*.zip -d /tmp/fe102 && unrar x -o+ -p'<password>' /tmp/fe102/V1.02/*part1.rar <root>/
-unzip -o FGOAC-scooby-v*.zip -d <root>/
 ./scripts/patch-ago-import.py <root>/App/ago.exe SetWindowFeedbackSetting IsWindow --apply
 ./scripts/apply-en.py <root> --apply
 ./scripts/patch-server.py <root> --apply

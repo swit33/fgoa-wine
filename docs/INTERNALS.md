@@ -139,3 +139,30 @@ Logs worth reading when something breaks: `/tmp/fgoa-shim.log` (every launcher c
 `logs/fgo-launch-<date>.log` (the game's live output from a Play), `/tmp/mariadb.log`,
 `/tmp/artemis.log`, and the game's own `logs/` next to `App/` (`fgozh.log`, `fgo.log`, `aimedb.log`,
 `ago-crash-*.dmp`).
+
+---
+
+## Assembling the game folder
+
+The installer expects the game folder to exist already; this is how such a folder is put together
+(reference for reproducing an install, not something the installer does):
+
+1. **`本体`** — Cloud23333's platform, `FGOA_Cloud23333.part1..5.rar`, unpacked into the game root.
+   Google Drive renames the parts it hands out (`part1-003.rar` and so on); `unrar` matches volumes by
+   name, so they have to be linked or renamed back to `partN.rar` first. `part5` sometimes arrives
+   inside the `V1.00` zip instead. The archive password used for this build was
+   `bilibili Cloud23333`.
+2. **`前端`** — his update. `V1.01…zip` / `V1.02…zip` each contain `.rar` parts; unpack the zip
+   somewhere temporary and then unpack `*part1.rar` over the same game root. **1.02 is cumulative**,
+   so applying 1.01 first is optional; either way the result must contain `App/FGO_Runtime.dll`,
+   which is how the installer recognises that an update was applied.
+3. **The scooby release** — `FGOAC-scooby-v1.1.2.zip` unpacked over the same root: it brings
+   `FGOAC scooby.exe`, `payload/`, `manifest.json`, `Apply-EN-Patch.ps1`, `compat/`, the guides.
+
+The three stages all write into the same folder, later stages overwriting earlier files. A tree built
+that way is what `install.sh` calls "the game folder"; nothing after step 3 cares where the archives
+came from.
+
+On the machine this was developed on, each archive was also unpacked *separately* under
+`/mnt/misc/games/fgoa/test/` (`本体/`, `前端-V1.01/`, `前端-V1.02/`, `FGOAC-scooby-v1.1.2/`) so their
+contents can be inspected and compared with what a given install ended up with.
