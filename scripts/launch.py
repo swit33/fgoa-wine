@@ -186,6 +186,18 @@ def main():
     if card is not None:
         print(f"DEVICE/aime.txt был пуст — вписал карту аккаунта aime_id={card}")
 
+    # Хук zh под Wine грузится только после патча из apply-en.py (5 байт в fgozh.dll:
+    # ntdll не экспортирует NtQueryInformationByName, и без патча DllMain возвращает FALSE).
+    # С патчем игра переводится самим хуком, как задумано автором; без него — обходом на файлах.
+    zh_path = os.path.join(root, "App", "zh", "fgozh.dll")
+    zh_hook = False
+    if os.path.isfile(zh_path):
+        with open(zh_path, "rb") as fh:
+            zh_hook = fh.read()[0x19E99:0x19E9E] == bytes.fromhex("31c0909090")
+        if not zh_hook:
+            print("предупреждение: fgozh.dll не пропатчен — английский идёт обходом "
+                  "(наложен на файлы); запусти install.sh или apply-en.py --apply")
+
     env = {
         "SEGATOOLS_CONFIG_PATH": "Z:" + target.replace("/", "\\"),
         "FGO_INSTALL_ROOT": install,
@@ -195,7 +207,7 @@ def main():
         "FGO_LOCAL_BILLING_PORT": str(PORTS["billing"]),
         "FGO_LOCAL_AIME_PORT": str(PORTS["aime"]),
         "FGO_PRINT_METADATA_ONLY": "1",
-        "FGO_ZH_ENABLED": "0",           # английский наложен на файлы, хук zh не нужен
+        "FGO_ZH_ENABLED": "1" if zh_hook else "0",
         # имя разделяемой памяти, куда лончер пишет колоду (формула из GameCommunication.cs)
         "FGO_DECK_CHANNEL": "FGODeck_" + hashlib.sha256(
             game.rstrip("\\").upper().encode("utf-8")).hexdigest().upper(),
@@ -209,8 +221,10 @@ def main():
         env["FGO_BORDERLESS_COMPOSED"] = "1"
 
     G = game
-    args = ["inject.exe", "-d", "-k", G + "\\fgoglcompat.dll", "-k", G + "\\fgohook.dll",
-            G + "\\ago.exe", native_render_argument(cfg["width"], cfg["height"])]
+    args = ["inject.exe", "-d", "-k", G + "\\fgoglcompat.dll", "-k", G + "\\fgohook.dll"]
+    if zh_hook:
+        args += ["-k", G + "\\zh\\fgozh.dll"]
+    args += [G + "\\ago.exe", native_render_argument(cfg["width"], cfg["height"])]
     if windowed:
         args.append("-w")
     args.append("--wasapi-shared")

@@ -1,7 +1,12 @@
 #!/usr/bin/env python3
-"""Накладывает английский набор FGOAC scooby прямо на файлы игры — обход хука zh.
+"""Накладывает английский набор FGOAC scooby прямо на файлы игры.
 
-Хук App\\zh\\fgozh.dll на Wine не инициализируется, поэтому делаем то же самое заранее:
+Хук App\\zh\\fgozh.dll под Wine падает в DllMain: ntdll не экспортирует
+NtQueryInformationByName, fgozh.dll считает это фатальным и возвращает FALSE — inject.exe
+после этого убивает игру. Фаза 0 снимает это пятью байтами (идея и смещение:
+yana-arch/FGOAC-scooby-linux, ветка linux-support), и дальше хук грузится сам.
+Пока хук не загружен (или если его снова сломает новая сборка), работает обход —
+делаем то же самое заранее:
   1) ресурсы: App/zh/<путь> -> App/<путь>, список берём из App/zh/text-outputs.json;
   2) строки внутри ago.exe: правка по смещениям из App/zh/executable-text.json (utf-8,
      английский всегда короче японского, поэтому влезает на место, хвост добивается нулями).
@@ -22,6 +27,12 @@ import time
 
 BACKUP_DIR = "_en-overlay-backup"
 
+# 5 байт в App\\zh\\fgozh.dll: mov eax,0Ch (MH_ERROR_FUNCTION_NOT_FOUND) -> xor eax,eax
+FGOZH_REL = "App/zh/fgozh.dll"
+FGOZH_OFFSET = 0x19E99
+FGOZH_ABORT = bytes.fromhex("b80c000000")
+FGOZH_PATCHED = bytes.fromhex("31c0909090")
+
 
 def sha256(path):
     import hashlib
@@ -30,6 +41,51 @@ def sha256(path):
         for chunk in iter(lambda: fh.read(1 << 20), b""):
             h.update(chunk)
     return h.hexdigest()
+
+
+def sha256_bytes(data):
+    return hashlib.sha256(data).hexdigest()
+
+
+def fgozh_ok(data, expected):
+    """Манифест описывает нетронутый fgozh.dll; после патча хука файл сверяем,
+    откатив пять байт на место — иначе проверка payload всегда будет ругаться."""
+    if sha256_bytes(data) == expected:
+        return True
+    if data[FGOZH_OFFSET:FGOZH_OFFSET + 5] == FGOZH_PATCHED:
+        rolled = bytearray(data)
+        rolled[FGOZH_OFFSET:FGOZH_OFFSET + 5] = FGOZH_ABORT
+        return sha256_bytes(bytes(rolled)) == expected
+    return False
+
+
+def patch_fgozh(root, mode):
+    """Фаза 0: разрешить fgozh.dll грузиться под Wine (см. модульный докстринг).
+    -> (состояние, проблемы)
+    """
+    path = os.path.join(root, FGOZH_REL)
+    if not os.path.isfile(path):
+        return "нет файла", []
+    data = open(path, "rb").read()
+    head = data[FGOZH_OFFSET:FGOZH_OFFSET + 5]
+    if head == FGOZH_PATCHED:
+        return "хук грузится (пропатчен)", []
+    if head != FGOZH_ABORT:
+        return ("неизвестная сборка",
+                [f"fgozh.dll: на {hex(FGOZH_OFFSET)} не то, что ожидалось ({head.hex()}) — "
+                 "патч хука не наложен, перевод работает обходным путём"])
+    if mode == "verify":
+        return "не пропатчен", ["fgozh.dll: патч хука не наложен — английский идёт обходом"]
+    if mode != "apply":
+        return "будет пропатчен", []
+    backup_path = path + ".wine-hook.bak"
+    if not os.path.exists(backup_path):
+        shutil.copy2(path, backup_path)
+    patched = bytearray(data)
+    patched[FGOZH_OFFSET:FGOZH_OFFSET + 5] = FGOZH_PATCHED
+    with open(path, "wb") as fh:
+        fh.write(patched)
+    return "пропатчен (хук теперь грузится)", []
 
 
 def read_json(path):
@@ -140,6 +196,12 @@ def overlay_exe_strings(root, mode):
     return patched, skipped, empty, problems
 
 
+def manifest_ok(rel, dst, expected):
+    if rel == FGOZH_REL:
+        return fgozh_ok(open(dst, "rb").read(), expected)
+    return sha256(dst) == expected
+
+
 def overlay_list(root):
     """Список файлов, которые подменяет хук.
 
@@ -156,6 +218,8 @@ def overlay_list(root):
             rel = os.path.relpath(os.path.join(dirpath, name), zh).replace("\\", "/")
             if rel in meta or rel.startswith("rom/font/"):
                 continue
+            if name.endswith((".bak", ".orig", ".wine-hook.bak")):
+                continue          # наши же бэкапы в App/zh не разносим по игре
             rels.add(rel)
     return sorted(rels)
 
@@ -181,13 +245,13 @@ def overlay_payload(root, mode):
         if not from_payload:
             # часть манифеста (сам FGOAC scooby.exe) лежит прямо в корне — только сверяем
             if mode == "verify" or os.path.isfile(dst):
-                if os.path.isfile(dst) and sha256(dst) == expected:
+                if os.path.isfile(dst) and manifest_ok(rel, dst, expected):
                     copied += 1
                 else:
                     problems.append(f"не совпадает с манифестом: {rel}")
             continue
         if mode == "verify":
-            if os.path.isfile(dst) and sha256(dst) == expected:
+            if os.path.isfile(dst) and manifest_ok(rel, dst, expected):
                 copied += 1
             else:
                 problems.append(f"не совпадает с манифестом: {rel}")
@@ -205,6 +269,8 @@ def main():
     root = os.path.abspath(sys.argv[1])
     mode = "verify" if "--verify" in sys.argv else ("apply" if "--apply" in sys.argv else "plan")
     payload_copied, manifest_total, payload_problems = overlay_payload(root, mode)
+    # патч хука строго после копии payload: она возвращает файл к нетронутому виду
+    fgozh_state, fgozh_problems = patch_fgozh(root, mode)
     # список оверлея строим ПОСЛЕ payload: только он кладёт в App/zh спрайты и прочее
     rels = overlay_list(root)
     copied, backups, problems = overlay_files(root, rels, mode)
@@ -236,9 +302,10 @@ def main():
 
     print(f"режим: {mode}")
     print(f"  payload по манифесту: {payload_copied}/{manifest_total} файлов")
+    print(f"  хук zh (fgozh.dll):  {fgozh_state}")
     print(f"  ресурсов обработано: {copied}/{len(rels)}  (бэкапов создано: {backups})")
     print(f"  строк в ago.exe:     {patched}  (пропущено: {skipped}, пустой перевод: {empty})")
-    all_problems = payload_problems + problems + exe_problems
+    all_problems = payload_problems + fgozh_problems + problems + exe_problems
     if all_problems:
         print(f"  проблемы ({len(all_problems)}):")
         for line in all_problems[:15]:
