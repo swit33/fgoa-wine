@@ -67,11 +67,13 @@ The launcher's first start sets itself up (it checks the environment, applies th
 creates an account called `Master`), then press **Play**. The first launch takes about a minute while
 the game compiles shaders.
 
-Before you press Play, two things are worth doing on the launcher's pages:
+Before you press Play, one thing is worth doing on the launcher's pages:
 
-* **Account** — make sure an account exists and is the one in use. If the game starts with an empty
-  `DEVICE/aime.txt`, it creates the broken `aime_id 4294967295`; `install.sh --fix-account` cleans
-  that up, and `launch.py` also refuses to start with an empty card when a valid account exists.
+* **Account** — the launcher's first run already created a starter account called `Master` and made it
+  the current one, and the Account page handles any further accounts. (If the game is ever started with
+  an empty `DEVICE/aime.txt` on its own, it creates the broken `aime_id 4294967295`; `install.sh
+  --fix-account` cleans that up, and `launch.py` refuses to start with an empty card while a valid
+  account exists.)
 * **Cards and Deck** — build a deck (double-click up to 30 cards). The game plays the deck that was
   in hand at Play; as shipped it contains one card, so only Mash appears.
 
