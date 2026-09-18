@@ -7,7 +7,7 @@
 #      которые Google Drive переименовал (part1-003.rar -> part1.rar);
 #   3) накатывает 前端 1.01, затем 1.02, затем релиз лончера;
 #   4) применяет наш слой: импорт-патч ago.exe, перевод (патч хука fgozh.dll,
-#      1683 файла + строки в ago.exe);
+#      1683 файла + строки в ago.exe), правки серверных инструментов;
 #   5) готовит Wine-префикс: создаёт его при необходимости, ставит шим вместо pwsh.exe,
 #      ставит и регистрирует шрифты WPF, пишет конфиг шима;
 #   6) проверяет порты (ALL.Net 777 привилегированный; БД 8888, если занят — подбирает другой);
@@ -172,6 +172,7 @@ apply_our_layer() {
     python3 "$HERE/scripts/patch-ago-import.py" "$ROOT/App/ago.exe" SetWindowFeedbackSetting IsWindow --apply >/dev/null
     say "импорт SetWindowFeedbackSetting -> IsWindow: применён"
     python3 "$HERE/scripts/apply-en.py" "$ROOT" --apply | tail -3
+    python3 "$HERE/scripts/patch-server.py" "$ROOT" --apply | tail -2
 }
 
 # ---------------------------------------------------------------- префикс
@@ -276,6 +277,11 @@ verify_all() {
         say "[OK]   перевод совпадает с манифестом"
     else
         say "[FAIL] перевод не сходится — запусти install.sh заново"; fails=$((fails+1))
+    fi
+    if python3 "$HERE/scripts/patch-server.py" "$ROOT" --verify >/dev/null 2>&1; then
+        say "[OK]   серверные правки на месте (bad_output, Max All Servants)"
+    else
+        say "[FAIL] серверные правки не наложены — запусти install.sh заново"; fails=$((fails+1))
     fi
     if [ -f "$PREFIX/drive_c/Program Files/PowerShell/7/pwsh-stub.ini" ]; then
         say "[OK]   шим: $(cat "$PREFIX/drive_c/Program Files/PowerShell/7/pwsh-stub.ini")"
