@@ -31,6 +31,25 @@ if [ -z "${FGOA_ROOT:-}" ] && [ "${PWD%[\\/]App}" != "$PWD" ]; then
 fi
 export FGOA_ROOT
 
+# PE-стаб добавляет к вызову --fgoa-done <путь>: в этот файл мы кладём код возврата,
+# потому что Wine запускает bash отдельным unix-процессом и по процессу лончер конца
+# работы не видит (снимает флаг serverConfiguring и сбрасывает статус раньше времени).
+DONE_FILE=""
+_args=()
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --fgoa-done) DONE_FILE="${2:-}"; shift 2 ;;
+        *) _args+=("$1"); shift ;;
+    esac
+done
+[ ${#_args[@]} -gt 0 ] && set -- "${_args[@]}" || set --
+if [ -n "$DONE_FILE" ]; then
+    _unix=$(winepath -u "$DONE_FILE" 2>/dev/null || true)
+    [ -n "$_unix" ] || _unix=$(printf '%s' "$DONE_FILE" | sed 's|^[Zz]:||; s|\\|/|g')
+    case "$_unix" in /*) DONE_FILE="$_unix" ;; esac
+    trap 'rc=$?; printf "%s" "$rc" > "$DONE_FILE" 2>/dev/null || true' EXIT
+fi
+
 LOG="${FGOA_SHIM_LOG:-/tmp/fgoa-shim.log}"
 {
     printf '=== %s cwd=%s argv=%d root=%s\n' "$(date '+%F %T')" "$PWD" "$#" "${FGOA_ROOT:-?}"

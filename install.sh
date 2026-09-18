@@ -135,7 +135,12 @@ setup_prefix() {
 
     if [ "$DO_SHIM" = 1 ]; then
         local stub="$HERE/shim/stub/pwsh-stub.exe"
-        [ -f "$stub" ] || { say "собираю PE-стаб"; "$HERE/shim/stub/build.sh" "Z:$HERE/shim/pwsh-shim.sh" >/dev/null || die "стаб не собрался"; }
+        # пересобираю, если исходник новее (иначе в префикс уедет устаревший PE: он не ждёт
+        # шим, лончер видит мгновенный выход и сбрасывает статус сервера)
+        if [ ! -f "$stub" ] || [ "$HERE/shim/stub/pwsh-stub.c" -nt "$stub" ]; then
+            say "собираю PE-стаб"
+            "$HERE/shim/stub/build.sh" "Z:$HERE/shim/pwsh-shim.sh" >/dev/null || die "стаб не собрался"
+        fi
         mkdir -p "$PREFIX/drive_c/Program Files/PowerShell/7"
         local shim="$PREFIX/drive_c/Program Files/PowerShell/7/pwsh.exe"
         if [ -f "$shim" ] && ! file "$shim" | grep -q PE32 && ! grep -q 'fgoa-wine pwsh shim' "$shim" 2>/dev/null; then
