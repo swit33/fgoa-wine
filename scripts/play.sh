@@ -1,8 +1,8 @@
 #!/bin/bash
-# Запуск игры FGO Arcade напрямую, без лончера.
-# Режим экрана/разрешение/ввод берутся из App/fgo-launcher.json.
-#   ./play.sh              запустить в корне из конфига
-#   ./play.sh <install>    явно указать корень установки
+# Starts the game directly, without the launcher.
+# Screen mode, resolution, input and frame rate come from App/fgo-launcher.json.
+#   ./play.sh              start it in the game root taken from the config
+#   ./play.sh <install>    pass an explicit game root
 set -u
 HERE="$(cd "$(dirname "$0")" && pwd)"
 export FGOA_WINE_DIR="$(cd "$HERE/.." && pwd)"

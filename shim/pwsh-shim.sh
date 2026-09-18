@@ -1,39 +1,39 @@
 #!/bin/bash
-# Шим вместо PowerShell для лончера FGOAC scooby под Wine.
+# Shim in place of PowerShell for the FGOAC scooby launcher under Wine.
 #
-# Лончер ищет pwsh.exe и запускает его через CreateProcess. Wine умеет запускать
-# не-PE файл, если у него есть shebang, — поэтому шим это bash-скрипт, а вся логика
-# в shim/handlers/*.py (обычные хостовые программы: python3, bash, wine).
+# The launcher looks for pwsh.exe and starts it through CreateProcess. Wine runs a
+# non-PE file when it carries a shebang, so the shim is a bash script and all the logic
+# lives in shim/handlers/*.py (plain host programs: python3, bash, wine).
 #
-# Контракт лончера — девять вызовов:
-#   -Command '... [IntPtr]::Size ...'                       проба версии PowerShell
-#   -Command '.... . $env:FGO_CHECK_SCRIPT; Test-FgoWritableLayout ...'   проверка записи
-#   -File FGO_EnvironmentCheck.ps1                          отчёт об окружении
-#   -File Apply-EN-Patch.ps1 [-InstallRoot ..]              накат/откат английского
-#   -File Start-FGOLocalServer.ps1 [-ServerHost ..]         старт сервера
-#   -File Stop-FGOLocalServer.ps1                           стоп сервера
+# The launcher's contract - nine call sites:
+#   -Command '... [IntPtr]::Size ...'                       PowerShell version probe
+#   -Command '.... . $env:FGO_CHECK_SCRIPT; Test-FgoWritableLayout ...'   writable-layout check
+#   -File FGO_EnvironmentCheck.ps1                          environment report
+#   -File Apply-EN-Patch.ps1 [-InstallRoot ..]              apply/roll back English
+#   -File Start-FGOLocalServer.ps1 [-ServerHost ..]         start the server
+#   -File Stop-FGOLocalServer.ps1                           stop the server
 #   -File Stop-FGOLocalServerWhenIdle.ps1 -FrontendProcessId N
-#   -File FGO_Launcher.ps1 -DisplayMode .. -ResolutionWidth .. (кнопка Play)
-#   -File Apply-EN-Patch.ps1 (из апдейтера, с новым payload)
+#   -File FGO_Launcher.ps1 -DisplayMode .. -ResolutionWidth .. (the Play button)
+#   -File Apply-EN-Patch.ps1 (from the updater, with a new payload)
 #
-# Любой другой вызов логируется и возвращает ошибку — тихо «успех» не отвечаем.
+# Any other call is logged and fails - we never answer a silent "success".
 set -u
 
 SELF_DIR="$(cd "$(dirname "$0")" && pwd)"
 CONFIG="${FGOA_SHIM_CONFIG:-$HOME/.config/fgoa-wine/config.env}"
 # shellcheck disable=SC1090
 [ -r "$CONFIG" ] && . "$CONFIG"
-# хендлеры лежат в репозитории, а не рядом с шимом в префиксе
+# the handlers live in this folder, not next to the shim inside the prefix
 HANDLERS="${FGOA_HANDLERS:-$SELF_DIR/handlers}"
-# лончер запускает скрипты с рабочим каталогом <корень>/App — годится как резервный путь
+# the launcher runs scripts with <root>/App as cwd - good enough as a fallback path
 if [ -z "${FGOA_ROOT:-}" ] && [ "${PWD%[\\/]App}" != "$PWD" ]; then
     FGOA_ROOT="$(cd "$PWD/.." && pwd)"
 fi
 export FGOA_ROOT
 
-# PE-стаб добавляет к вызову --fgoa-done <путь>: в этот файл мы кладём код возврата,
-# потому что Wine запускает bash отдельным unix-процессом и по процессу лончер конца
-# работы не видит (снимает флаг serverConfiguring и сбрасывает статус раньше времени).
+# The PE stub appends --fgoa-done <path> to every call: we write our exit code there,
+# because Wine runs bash as a separate unix process, so the launcher cannot tell when
+# the work ended (it clears serverConfiguring and drops the server status too early).
 DONE_FILE=""
 _args=()
 while [ $# -gt 0 ]; do
@@ -69,7 +69,7 @@ done
 
 handler=""
 if [ "$mode" = file ]; then
-    # basename здесь не годится: путь Windows-ный, а разделитель в Linux другой
+    # basename is no good here: the path is a Windows one, the separator is Linux's
     base="${target##*[\\/]}"
     case "$base" in
         FGO_Launcher.ps1)                 handler=FGO_Launcher ;;
@@ -93,23 +93,23 @@ fi
 
 if [ -z "$handler" ]; then
     {
-        echo "[fgoa-wine] Неизвестный вызов шима: $*"
-        echo "[fgoa-wine] Похоже, лончер обновился и зовёт новый скрипт. Добавь хендлер в shim/handlers/."
+        echo "[fgoa-wine] Unknown shim call: $*"
+        echo "[fgoa-wine] The launcher looks updated and calls a new script. Add a handler under shim/handlers/."
     } | tee -a "$LOG" >&2
     exit 1
 fi
 
 if [ ! -f "$HANDLERS/$handler.py" ]; then
     {
-        echo "[fgoa-wine] Нет хендлера $HANDLERS/$handler.py"
-        echo "[fgoa-wine] Проверь FGOA_HANDLERS в $CONFIG (его пишет install.sh)."
+        echo "[fgoa-wine] No handler at $HANDLERS/$handler.py"
+        echo "[fgoa-wine] Check FGOA_HANDLERS in $CONFIG (install.sh writes it)."
     } | tee -a "$LOG" >&2
     exit 1
 fi
 
-# -u: вывод хендлеров идёт вживую в панель логов лончера, а не в конце.
-# Заодно копия в logs/server-control.log: ровно этот файл лончер показывает в диалоге
-# «Server Did Not Start» (оригинальные ps1 писали туда свой транскрипт).
+# -u: handler output reaches the launcher's log panel live instead of at the end.
+# It is also copied into logs/server-control.log: that is the file the launcher shows
+# in its "Server Did Not Start" dialog (the original ps1 files wrote a transcript there).
 CONTROL_LOG="${FGOA_ROOT:-}/logs/server-control.log"
 if [ -d "${FGOA_ROOT:-}" ]; then
     mkdir -p "${FGOA_ROOT}/logs" 2>/dev/null || true

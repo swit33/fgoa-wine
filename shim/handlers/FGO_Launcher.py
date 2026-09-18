@@ -1,20 +1,20 @@
 #!/usr/bin/env python3
-"""FGO_Launcher.ps1 — кнопка Play: подготовить игру и запустить её через inject.exe.
+"""FGO_Launcher.ps1 - the Play button: prepare the game and start it through inject.exe.
 
-Лончер читает наш вывод в панель логов и отпускает кнопку только по EOF. Поэтому игру
-запускаем отсоединённо (common.spawn_detached): свой лог, своя сессия, exit 0 сразу —
-ровно как оригинальный скрипт, который уводит игру в фон и возвращает управление. Если
-ждать игру (как было раньше), кнопка «залипает» на всю сессию: нажатия копятся, и каждое
-следующее запускает ещё один экземпляр — вместе с ещё одним сервером и ещё одним инжектом.
+The launcher reads our output into its log panel and only releases the button on EOF.
+So the game is started detached (common.spawn_detached): its own log, its own session,
+exit 0 right away - exactly like the original script, which backgrounds the game and
+returns. Waiting for the game (as an earlier version did) leaves the button stuck for the
+whole session: presses pile up and each one starts another instance - and another server.
 
-Перед запуском гасим остатки прошлой сессии из этой же установки (ago/amdaemon/inject) —
-то же, что делает FGO_Launcher.ps1 через Get-Process ... | Stop-Process -Force.
+Before starting we kill what is left of the previous session from this same install
+(ago/amdaemon/inject) - what FGO_Launcher.ps1 does through Get-Process | Stop-Process.
 
-Оригинальный скрипт сам поднимает сервер (autoStartLocalServer), иначе игра не дойдёт до
-титульного экрана и покажет ERROR 4102.
+The original script brings the server up itself (autoStartLocalServer); without it the
+game never reaches the title screen and shows ERROR 4102.
 
-Колода: лончер сам кладёт её в разделяемую память FGO_DECK_<sha256 пути App>, имя канала
-игра узнаёт из FGO_DECK_CHANNEL (её ставит scripts/launch.py; формула взята из
+Deck: the launcher publishes it into the shared memory FGO_DECK_<sha256 of the App path>;
+the game learns the channel name from FGO_DECK_CHANNEL, which scripts/launch.py sets
 FGOLocalPlatform/DeckReaderUI.Kancolle/GameCommunication.cs).
 """
 import os
@@ -32,7 +32,7 @@ GAME_PROCESSES = ("ago.exe", "amdaemon.exe", "inject.exe")
 
 
 def kill_leftovers():
-    """Процессы прошлой сессии этой установки. Под Wine их видно по имени exe."""
+    """Processes of this install's previous session. Under Wine they show up by exe name."""
     killed = []
     for name in GAME_PROCESSES:
         try:

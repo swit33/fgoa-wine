@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""FGO_EnvironmentCheck.ps1 — отчёт об окружении.
+"""FGO_EnvironmentCheck.ps1 - the environment report.
 
-Лончер показывает этот текст на странице Diagnostics and Help. Смысл — честно сказать,
-что есть, чего нет и что под Wine проверено быть не может (аудио-эндпоинты и реестр
-Windows не эмулируются, поэтому эти пункты помечаем отдельно, а не выдумываем).
+The launcher shows this text on the Diagnostics and Help page. The point is to say
+honestly what exists, what does not, and what cannot be checked under Wine at all (audio
+endpoints and the Windows registry are not emulated, so those are marked as such).
 """
 import os
 import sys

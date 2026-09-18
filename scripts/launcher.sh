@@ -1,8 +1,8 @@
 #!/bin/bash
-# Запуск лончера FGOAC scooby под Wine.
+# Starts the FGOAC scooby launcher under Wine.
 #   ./launcher.sh
-# Лончер сам поднимает сервер (кнопка Start server или Play) через наш шим.
-# Если он перестал реагировать на мышь — закрой и запусти заново.
+# The launcher brings the local server up itself (Start server, or Play) through our shim.
+# If it stops reacting to the mouse, close it and start it again.
 set -u
 HERE="$(cd "$(dirname "$0")" && pwd)"
 export FGOA_WINE_DIR="$(cd "$HERE/.." && pwd)"

@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Stop-FGOLocalServerWhenIdle.ps1 — сторож: сервер гаснет, когда лончер закрыли.
+"""Stop-FGOLocalServerWhenIdle.ps1 - a watcher: the server goes down with the launcher.
 
-Лончер запускает нас «в фоне» и не ждёт. Держать его stdout-пайпы нельзя: лончер после
-остановки скрипта ждёт EOF. Поэтому заводим отдельный процесс (своя сессия, вывод в файл)
-и сразу выходим.
+The launcher starts us in the background and does not wait. We must not hold its stdout
+pipes: after the script stops it waits for EOF. So we spawn a separate process (its own
+session, output to a file) and exit right away.
 
-Аргумент -FrontendProcessId (Windows-PID) здесь бесполезен — нумерация PID у Wine и Linux
-разная, поэтому проверяем наличие процесса лончера по имени.
+-FrontendProcessId (a Windows PID) is useless here: PIDs under Wine and on Linux are
+numbered differently, so the launcher process is looked up by name instead.
 """
 import os
 import sys

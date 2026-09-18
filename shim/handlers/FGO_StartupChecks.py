@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""Test-FgoWritableLayout — проверка, что во все рабочие папки игры можно писать.
+"""Test-FgoWritableLayout - checks that every working folder of the game is writable.
 
-Лончер зовёт это как `pwsh -Command "... . $env:FGO_CHECK_SCRIPT; Test-FgoWritableLayout
--InstallRoot $env:FGO_CHECK_ROOT"` и любой ненулевой код возврата показывает пользователю
-как «ошибку 4» (папка заблокирована) вместе с нашим выводом. Поэтому:
-  * папки создаём, пишем и удаляем пробный файл;
-  * с файлов и содержимого рабочих каталогов снимаем read-only (архивы после распаковки
-    приходят с этим флагом);
-  * на успехе печатаем короткий отчёт и выходим с 0, на провале — понятную строку и код 4.
+The launcher calls this as `pwsh -Command "... . $env:FGO_CHECK_SCRIPT; Test-FgoWritableLayout
+-InstallRoot $env:FGO_CHECK_ROOT"` and shows any non-zero exit code to the player as
+"error 4" (folder blocked) together with our output. Hence:
+  * folders are created, a probe file is written and removed;
+  * read-only is cleared from files and folder contents (unpacked archives arrive with
+    that flag);
+  * on success a short report and exit 0; on failure a readable line and exit code 4.
 """
 import os
 import sys
@@ -23,7 +23,7 @@ CLEAR_READONLY = ["AMFS", "GameData", "DEVICE", "Server/state", "Server/data/mar
 
 
 def install_root():
-    """Корень берём из окружения лончера (FGO_CHECK_ROOT), иначе из конфига шима."""
+    """The root comes from the launcher environment (FGO_CHECK_ROOT), else from the shim config."""
     from_env = os.environ.get("FGO_CHECK_ROOT")
     if from_env:
         return common.host_path(from_env)

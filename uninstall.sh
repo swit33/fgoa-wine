@@ -1,8 +1,8 @@
 #!/bin/bash
-# Снять наш слой с Wine-префикса: вернуть настоящий pwsh, убрать шим и шрифты.
-# Игру, её данные и перевод НЕ трогает.
-#   ./uninstall.sh            снять шим и шрифты, конфиг оставить
-#   ./uninstall.sh --purge    ещё и удалить ~/.config/fgoa-wine/
+# Removes this layer from the Wine prefix: puts the real PowerShell back and takes the
+# shim and the fonts out. The game, its data and the English dataset are left alone.
+#   ./uninstall.sh            remove the shim and the fonts, keep the config
+#   ./uninstall.sh --purge    also delete ~/.config/fgoa-wine/
 set -eu
 HERE="$(cd "$(dirname "$0")" && pwd)"
 CONFIG="$HOME/.config/fgoa-wine/config.env"
@@ -18,15 +18,15 @@ export WINEPREFIX="$PREFIX" WINEDEBUG="${WINEDEBUG:--all}"
 PSDIR="$PREFIX/drive_c/Program Files/PowerShell/7"
 SHIM="$PSDIR/pwsh.exe"
 
-echo "префикс: $PREFIX"
+echo "prefix: $PREFIX"
 
 if [ -f "$SHIM" ] && { file "$SHIM" | grep -q PE32 || grep -q 'fgoa-wine pwsh shim' "$SHIM" 2>/dev/null; }; then
     if [ -f "$PSDIR/pwsh.real.exe" ]; then
         mv -f "$PSDIR/pwsh.real.exe" "$SHIM"
-        echo "настоящий PowerShell возвращён на место"
+        echo "the real PowerShell is back in place"
     else
         rm -f "$SHIM"
-        echo "шим удалён"
+        echo "shim removed"
     fi
 fi
 rm -f "$PSDIR/pwsh-stub.ini"
@@ -36,12 +36,12 @@ while IFS='|' read -r name file; do
     wine reg delete "$FONTS_REG" /v "$name" /f >/dev/null 2>&1 || true
     rm -f "$PREFIX/drive_c/windows/Fonts/$file"
 done < "$HERE/fonts/fonts.list"
-echo "наши шрифты убраны из префикса и реестра"
+echo "our fonts are out of the prefix and its registry"
 
 if [ "${1:-}" = "--purge" ]; then
     rm -rf "$(dirname "$CONFIG")"
-    echo "удалён $CONFIG"
+    echo "removed $CONFIG"
 fi
 
 wineserver -k 2>/dev/null || true
-echo "готово (игра и её английский набор не тронуты)"
+echo "done (the game and its English dataset were not touched)"

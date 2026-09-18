@@ -1,8 +1,9 @@
 #!/bin/bash
-# Локальный сервер FGO (MariaDB + ARTEMiS) под Wine.
-#   ./server.sh          поднять то, что ещё не поднято
-#   ./server.sh stop     остановить (MariaDB — штатно, через mysqladmin)
-# Порты: ALL.Net 777, billing 9999, AimeDB 7777, БД 8889 (8888 занят докером на этой машине).
+# The local FGO server (MariaDB + ARTEMiS) under Wine.
+#   ./server.sh          bring up whatever is not up yet
+#   ./server.sh stop     stop it (MariaDB the graceful way, through mariadb-admin)
+# Ports: ALL.Net 777, billing 9999, AimeDB 7777, database 8889 (install.sh moves it off
+# 8888 when something else holds that port; override with FGOA_DB_PORT).
 set -u
 HERE="$(cd "$(dirname "$0")" && pwd)"
 export FGOA_WINE_DIR="$(cd "$HERE/.." && pwd)"
@@ -15,14 +16,15 @@ ROOT="$FGOA_ROOT"
 export WINEDEBUG=-all
 WROOT="Z:$(printf '%s' "$ROOT" | tr '/' '\\')"
 SRV="$WROOT\\Server"
-DB_PORT=8889
-HTTP_PORT=777
+DB_PORT="${FGOA_DB_PORT:-8889}"
+HTTP_PORT="${FGOA_HTTP_PORT:-777}"
 
 wait_port() { for _ in $(seq 1 40); do ss -ltn | grep -q ":$1 " && return 0; sleep 1; done; return 1; }
 port_up()   { ss -ltn | grep -q ":$1 "; }
 
-# Закрываем БД так же, как их Stop-FGOLocalServer.ps1: mariadb-admin с root-паролем
-# из их же скрипта и --no-defaults (иначе [client] из mariadb.ini ломает доступ).
+# Close the database the way their Stop-FGOLocalServer.ps1 does: mariadb-admin with the
+# root password from their own script and --no-defaults (otherwise [client] in mariadb.ini
+# gets in the way).
 DB_ROOT_PASSWORD=FgoLocalRoot2026
 
 stop_db() {
@@ -34,14 +36,14 @@ stop_db() {
         port_up "$DB_PORT" || return 0
         sleep 1
     done
-    echo "MariaDB не закрылась штатно — снимаю процесс (InnoDB восстановится при следующем старте)"
+    echo "MariaDB did not shut down gracefully - taking the process down (InnoDB recovers on the next start)"
     pkill -x mariadbd.exe
 }
 
 if [ "${1:-}" = "stop" ]; then
     pkill -x python.exe 2>/dev/null
     stop_db
-    echo "сервер остановлен"
+    echo "server stopped"
     exit 0
 fi
 
@@ -55,22 +57,22 @@ if ! port_up "$DB_PORT"; then
             --log-error="$WROOT\\logs\\mariadb.log" \
             --console > /tmp/mariadb.log 2>&1 &
         wait_port $DB_PORT && break
-        echo "MariaDB не поднялась с попытки $attempt — пробую ещё раз"
+        echo "MariaDB did not come up on attempt $attempt - trying once more"
         pkill -x mariadbd.exe 2>/dev/null
         sleep 3
     done
-    port_up "$DB_PORT" || { echo "MariaDB не поднялась, смотри /tmp/mariadb.log"; exit 1; }
-    echo "MariaDB: порт $DB_PORT готов"
+    port_up "$DB_PORT" || { echo "MariaDB did not come up, see /tmp/mariadb.log"; exit 1; }
+    echo "MariaDB: port $DB_PORT is up"
 else
-    echo "MariaDB уже на $DB_PORT"
+    echo "MariaDB is already on $DB_PORT"
 fi
 
 if ! port_up "$HTTP_PORT"; then
     cd "$ROOT/Server/artemis" || exit 1
     nohup wine "$SRV\\python\\python.exe" index.py --config config > /tmp/artemis.log 2>&1 &
-    wait_port $HTTP_PORT || { echo "ARTEMiS не поднялся, смотри /tmp/artemis.log"; exit 1; }
-    echo "ARTEMiS: порт $HTTP_PORT готов"
+    wait_port $HTTP_PORT || { echo "ARTEMiS did not come up, see /tmp/artemis.log"; exit 1; }
+    echo "ARTEMiS: port $HTTP_PORT is up"
 else
-    echo "ARTEMiS уже на $HTTP_PORT"
+    echo "ARTEMiS is already on $HTTP_PORT"
 fi
 ss -ltn | grep -E ":$DB_PORT|:$HTTP_PORT|:9999|:7777"

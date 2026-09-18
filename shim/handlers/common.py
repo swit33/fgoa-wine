@@ -1,7 +1,7 @@
-"""Общая часть шима: конфиг, пути, конверсия Windows↔Linux, лог, запуск процессов.
+"""Shared shim plumbing: config, paths, Windows<->Linux conversion, logging, subprocesses.
 
-Шим (shim/pwsh.exe) — bash-скрипт на месте pwsh.exe. Wine запускает его как хостовый
-процесс, поэтому хендлеры живут в обычной Linux-среде: python3, bash, wine — всё доступно.
+The shim (shim/pwsh.exe) is a bash script sitting where pwsh.exe belongs. Wine runs it as
+a host process, so the handlers live in a normal Linux environment: python3, bash, wine.
 """
 import hashlib
 import os
@@ -53,7 +53,7 @@ def log_path():
 
 
 def launch_log_path():
-    """Куда пишется вывод игры, когда лончеру мы её отдаём в фон (кнопка Play)."""
+    """Where the game writes its output when we hand it over to the background (Play)."""
     logs = os.path.join(install_root(), "logs")
     os.makedirs(logs, exist_ok=True)
     return os.path.join(logs, "fgo-launch-%s.log" % time.strftime("%Y%m%d-%H%M%S"))
@@ -68,17 +68,17 @@ def log(line):
 
 
 def log_call(name, argv):
-    log(f"{name}: {' '.join(argv)}" if argv else f"{name}: (без аргументов)")
+    log(f"{name}: {' '.join(argv)}" if argv else f"{name}: (no arguments)")
 
 
 def win_path(host_path):
-    """Хостовый путь -> путь, каким его видит процесс внутри Wine (Z: == /)."""
+    """Host path -> the path a process inside Wine sees (Z: == /)."""
     return "Z:" + os.path.abspath(host_path).replace("/", "\\")
 
 
 def host_path(win):
-    """Путь из Windows-вида в хостовый. Понимает Z: (корень Linux) и любой другой диск
-    (мапится в drive_c соответствующей буквой префикса)."""
+    """Windows path to a host path. Understands Z: (the Linux root) and any other drive
+    (mapped into the prefix drive_c under the matching letter)."""
     win = (win or "").strip().strip('"')
     if len(win) >= 2 and win[1] == ":":
         drive, rest = win[0].upper(), win[2:].replace("\\", "/").lstrip("/")
@@ -89,18 +89,18 @@ def host_path(win):
 
 
 def deck_channel():
-    """Имя разделяемой памяти, куда лончер кладёт колоду.
-    Точно как в GameCommunication.ChannelName: sha256 от полного пути App в верхнем
-    регистре (хвостовой слеш срезан), hex в верхнем регистре, префикс FGODeck_."""
+    """Name of the shared memory the launcher publishes the deck into.
+    Exactly as in GameCommunication.ChannelName: sha256 of the full App path in upper
+    case (trailing slash trimmed), hex upper case, prefix FGODeck_."""
     app = win_path(app_dir()).rstrip("\\").upper()
     return "FGODeck_" + hashlib.sha256(app.encode("utf-8")).hexdigest().upper()
 
 
 def run(cmd, cwd=None, env=None, timeout=None, quiet=False):
-    """Запуск с наследованием stdio: лончер читает наш вывод в свою панель логов."""
+    """Run with inherited stdio: the launcher reads our output into its log panel."""
     log(f"run: {' '.join(cmd)}" + (f" (cwd={cwd})" if cwd else ""))
     full_env = dict(os.environ)
-    # без этого python-хелперы копят вывод в буфере и панель логов лончера пустует
+    # without this the python helpers buffer their output and the launcher's panel stays empty
     full_env.setdefault("PYTHONUNBUFFERED", "1")
     if env:
         full_env.update(env)
@@ -109,17 +109,17 @@ def run(cmd, cwd=None, env=None, timeout=None, quiet=False):
         return proc.returncode
     except subprocess.TimeoutExpired:
         if not quiet:
-            print(f"[fgoa-shim] команда не завершилась за {timeout} с: {' '.join(cmd)}")
+            print(f"[fgoa-shim] the command did not finish within {timeout}s: {' '.join(cmd)}")
         log(f"timeout: {' '.join(cmd)}")
         return 124
     except FileNotFoundError as exc:
-        print(f"[fgoa-shim] не найдено: {exc}")
+        print(f"[fgoa-shim] not found: {exc}")
         log(f"not found: {exc}")
         return 127
 
 
 def spawn_detached(cmd, log_file, cwd=None, env=None):
-    """Фоновый процесс, который переживёт лончер: свои потоки — в файл, новая сессия."""
+    """A background process that outlives the launcher: its own streams, its own session."""
     log(f"spawn detached: {' '.join(cmd)} -> {log_file}")
     full_env = dict(os.environ)
     full_env.setdefault("PYTHONUNBUFFERED", "1")
@@ -136,7 +136,7 @@ def script(name):
 
 
 def arg_value(argv, name, default=None):
-    """Значение аргумента PowerShell-вида: '-InstallRoot C:\\FGO' -> C:\\FGO."""
+    """Value of a PowerShell-style argument: '-InstallRoot C:\\FGO' -> C:\\FGO."""
     for i, item in enumerate(argv):
         if item == name and i + 1 < len(argv):
             return argv[i + 1]

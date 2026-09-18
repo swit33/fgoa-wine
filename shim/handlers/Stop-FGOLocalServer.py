@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Stop-FGOLocalServer.ps1 — остановить MariaDB и ARTEMiS."""
+"""Stop-FGOLocalServer.ps1 - stop MariaDB and ARTEMiS."""
 import os
 import sys
 

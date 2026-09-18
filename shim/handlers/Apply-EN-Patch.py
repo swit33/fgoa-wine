@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Apply-EN-Patch.ps1 — накат и откат английского набора.
+"""Apply-EN-Patch.ps1 - applies and rolls back the English dataset.
 
-Зовут из FirstRun и из апдейтера (после обновления релиза лончер распаковывает новый
-payload и просит применить его). Коды возврата повторяют документированные в оригинальном
-скрипте: 0 — применено (или уже стоит), 2 — не похоже на установку, 5 — набор не сошёлся,
-7 — откатывать нечего, 9 — нет обновления Cloud23333 (V1.01+).
+Called from FirstRun and from the updater (after a release update the launcher unpacks a
+new payload and asks to apply it). Exit codes match the original script's documentation:
+0 - applied (or already in place), 2 - not an install, 5 - the dataset did not verify,
+7 - nothing to roll back, 9 - Cloud23333's V1.01+ update is missing.
 """
 import os
 import shutil
