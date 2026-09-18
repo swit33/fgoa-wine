@@ -32,9 +32,10 @@ environment report, `Apply-EN-Patch.ps1`, `Start-FGOLocalServer.ps1`, `Stop-FGOL
 
 Testing trap: while any modal dialog of the launcher is open, its main window is
 `IsWindowEnabled == False` and silently ignores every click. Dismiss the dialog first.
-`tools/win-click.py` exists because Hyprland's dispatchers and `wtype` do not reach WPF or an
-XWayland game window; it runs *inside* Wine (`wine Server/python/python.exe tools/win-click.py …`),
-where `SetCursorPos` + `mouse_event` produce a real click.
+For automating the window from outside, note that a Wayland compositor will not deliver synthetic
+clicks into it; under X11 `xdotool` works, under Wayland the click would have to be produced from
+inside Wine (`SetCursorPos` + `mouse_event` from the platform's own python). Nothing in this project
+needs that: the cabinet-role cure in `UPSTREAM.md` is a key the player presses.
 
 ---
 
@@ -118,8 +119,7 @@ scripts/                           launcher.sh, play.sh, server.sh, launch.py,
                                    apply-en.py, patch-ago-import.py, patch-server.py,
                                    set-ports.py, fix-account.py, stop-watcher.py
 shim/                              pwsh-shim.sh, stub/, handlers/
-tools/win-click.py                 clicks and keys inside a Wine window
-fonts/                             WPF fonts with a renamed family + fonts.list
+fonts/                             font mapping the installer applies from your system
 ```
 
 Environment: `FGOA_ROOT` (game root, default: the folder above `fgoa-wine`), `WINEPREFIX` (default

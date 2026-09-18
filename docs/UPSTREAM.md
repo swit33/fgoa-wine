@@ -64,13 +64,16 @@ Not from any kit; verified on this machine by walking the game's own test menu.
   (`true` = main unit) and is rewritten on every boot from the game's own saved setting.
 * Passing `-sm server` (what `FGO_Launcher.ps1` does when `cabinetMode` is `server`) does **not**
   change it; neither does editing or deleting the JSON — the file is regenerated with the same value.
-* The cure is the game's own menu, and it can be driven from Linux with the tools in this folder:
-  focus the window (`hyprctl dispatch 'hl.dsp.focus({window="class:ago.exe"})'`), then
-  `wine Server/python/python.exe tools/win-click.py key F1` — `F1` is confirm/enter, `F2` moves the
-  arrow down the list with wraparound. Menu path: `Game Settings` → `Startup Mode` (cycles between
-  `Satellite (Sub Unit)` and `Satellite (Main Unit)`) → `Main Unit` → `Exit` (reboot; the process
-  exits, start it again with Play). After that `lan_install.server` is `true` and the game starts
-  normally.
+* The cure is the game's own test menu, and it is a player action, not a script: on that screen
+  press **F1** to enter the Game Test Menu, **F2** moves the arrow (down the list, wrapping) and
+  **F1** confirms. Menu path: `Game Settings` → `Startup Mode` (it cycles between
+  `Satellite (Sub Unit)` and `Satellite (Main Unit)`) → `Main Unit` → `Exit`. The process exits —
+  start it again with Play. After that `lan_install.server` is `true` and the game starts normally.
+  Any input arrangement works here, X11 or Wayland: it is the game reacting to a key, nothing more.
+* **This is a workaround, not a fix.** Where the game keeps the saved cabinet mode is still unknown;
+  the JSON it writes on every boot is derived from that saved state, so setting it in the file does
+  not survive. A real fix would write that state during installation. Revisit it if the symptom turns
+  up in issues — until then the menu route above is what the guide tells players.
 
 ## Known open items
 
