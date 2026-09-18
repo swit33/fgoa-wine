@@ -157,6 +157,10 @@ the English patch and the launcher this folder exists to run. Its `payload/`, `m
 the release's own English hook load under Wine, and the two `Server/tools/` fixes. What was taken,
 and what was measured before taking it, is in [`docs/UPSTREAM.md`](docs/UPSTREAM.md).
 * **Cloud23333** — the FGO Arcade local platform (`本体`, `前端`) that everything runs on.
+* The fonts in `fonts/` are **Liberation Sans/Mono** (SIL OFL 1.1) and **DejaVu Sans Mono** (Bitstream
+  Vera licence) with their internal family renamed, because the launcher's WPF front end asks for
+  families no Linux system has and dies without them. No Microsoft font is included;
+  [`fonts/NOTICE.md`](fonts/NOTICE.md) lists each file, its real identity and its licence.
 * **[fluphus](https://github.com/fluphus) — [fgo-arcade-amd-shim](https://github.com/fluphus/fgo-arcade-amd-shim)**
 (MIT): the AMD/Intel OpenGL layer that ships inside the platform's `compat/` folder.
 
