@@ -113,7 +113,7 @@ Not from any kit; verified on this machine by walking the game's own test menu.
   same values into the config the game reads). On Windows the platform creates that network itself; in
   a Wine prefix nothing does, and the probe has no fallback — `fgohook.dll` only rewrites the *session*
   traffic to `127.0.0.1`, which is why a game that got past boot plays fine without it.
-* **So the network is the thing to check first** (`ip -4 addr show lo`): `install.sh` now puts
+* **So the network is the thing to check first** (`ip -4 addr show lo`): `install-sudo.sh` now puts
   `192.168.100.1/24` and `192.168.100.11/24` there and keeps them across reboots
   (`fgoa-cabinet-net.service`), which is the same fix quinnjr's branch and yana-arch's Linux port both
   reached for — three independent routes to the same address. The idea to adopt it came from

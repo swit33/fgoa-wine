@@ -45,3 +45,5 @@ fi
 
 wineserver -k 2>/dev/null || true
 echo "done (the game and its English dataset were not touched)"
+echo "system files from install-sudo.sh (the sysctl, the cabinet addresses, the unit) stay:"
+echo "  sudo $HERE/install-sudo.sh --remove"

@@ -15,8 +15,9 @@
 #   3) prepares the Wine prefix: creates it when needed, installs the shim in place of
 #      pwsh.exe, installs and registers the WPF fonts, writes the shim config;
 #   4) the Mesa config the game's shaders need (config/drirc.d);
-#   5) the network the game expects: the cabinet addresses on lo, then the ports (ALL.Net 777
-#      is privileged (--sysctl), the database moves off a busy 8888);
+#   5) checks the two things that need root (port 777, the cabinet addresses on lo) and tells you
+#      to run ./install-sudo.sh, which is the only script here that asks for a password; also picks
+#      a free database port and tells the scripts about it;
 #   6) verifies the result and prints what to do next.
 #
 # Usage (the release sits inside the game folder as <root>/fgoa-wine):
@@ -24,11 +25,11 @@
 #   ./install.sh --root /path/to/game  # explicit game root
 #   ./install.sh --prefix /path        # Wine prefix (default ~/.local/share/fgoa-wine/prefix)
 #   ./install.sh --verify              # check an existing install, change nothing
-#   ./install.sh --sysctl              # also allow port 777 (needs root)
+#   sudo ./install-sudo.sh             # the root-only steps: port 777 and the cabinet addresses
 #   ./install.sh --use-wayland         # run Wine on its Wayland driver instead of X11. X11 is
 #                                      # the default: through XWayland the launcher and the game
 #                                      # take input on the better-trodden path (docs/INTERNALS.md)
-#   ./install.sh --no-fonts | --no-shim | --no-cabinet-net
+#   ./install.sh --no-fonts | --no-shim
 set -u
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -39,7 +40,7 @@ CONFIG="$CONFIG_DIR/config.env"
 TMPDIR_FGOA="${TMPDIR:-/tmp}/fgoa-wine-install"
 LOG="$TMPDIR_FGOA/install.log"
 
-DO_VERIFY=0; DO_SYSCTL=0; DO_FONTS=1; DO_SHIM=1; DO_CABINET_NET=1
+DO_VERIFY=0; DO_FONTS=1; DO_SHIM=1
 # X11 by default: Wine picks its Wayland driver whenever WAYLAND_DISPLAY is set, and the
 # X11/XWayland path is the one this launcher behaves on (see docs/INTERNALS.md).
 BACKEND=x11
@@ -48,13 +49,15 @@ while [ $# -gt 0 ]; do
     case "$1" in
         --root)      ROOT="$2"; shift 2 ;;
         --prefix)    PREFIX="$2"; shift 2 ;;
-        --verify)    DO_VERIFY=1; DO_FONTS=0; DO_SHIM=0; DO_CABINET_NET=0; shift ;;
-        --sysctl)    DO_SYSCTL=1; shift ;;
+        --verify)    DO_VERIFY=1; DO_FONTS=0; DO_SHIM=0; shift ;;
         --use-x11)   BACKEND=x11; shift ;;
         --use-wayland) BACKEND=wayland; shift ;;
         --no-fonts)  DO_FONTS=0; shift ;;
         --no-shim)   DO_SHIM=0; shift ;;
-        --no-cabinet-net) DO_CABINET_NET=0; shift ;;
+        # the root-only steps moved out: nothing in this file needs a password any more
+        --sysctl|--no-cabinet-net)
+                     echo "$1 moved out of install.sh - the root-only steps live in their own script:" >&2
+                     echo "  sudo ./install-sudo.sh" >&2; exit 2 ;;
         -h|--help)   awk 'NR>1 && /^set -u/{exit} NR>1{print}' "$0"; exit 0 ;;
         *) echo "unknown option: $1" >&2; exit 2 ;;
     esac
@@ -233,59 +236,41 @@ EOF
     say "shim config: $CONFIG (Wine backend: $BACKEND)"
 }
 
-# ---------------------------------------------------------------- cabinet network
-# The game's platform probe looks for the location server on the cabinet network
-# (192.168.100.0/24 - the addresses a real cabinet carries), and a cabinet that cannot reach it
-# comes up as a sub unit, which the game answers with ERROR 8404 at boot. The addresses go on lo;
-# `ip addr add` does not survive a reboot, so a unit re-adds them at boot.
-# Idea (and the reason it works) from quinnjr's wine-compat branch, see docs/UPSTREAM.md.
-setup_cabinet_net() {
-    local missing=""
-    ip -4 addr show lo 2>/dev/null | grep -q '192\.168\.100\.1/'  || missing="192.168.100.1/24"
-    ip -4 addr show lo 2>/dev/null | grep -q '192\.168\.100\.11/' || missing="$missing 192.168.100.11/24"
-    if [ -z "$missing" ]; then
-        say "cabinet network addresses are already on lo"
-    elif [ "$DO_CABINET_NET" = 1 ]; then
-        say "adding the cabinet network addresses to lo (sudo):$missing"
-        sudo ip addr add 192.168.100.1/24 dev lo 2>/dev/null || true
-        sudo ip addr add 192.168.100.11/24 dev lo 2>/dev/null || true
-        printf '%s\n' \
-            '# FGO Arcade: the cabinet virtual network, which the platform probe expects.' \
-            '[Unit]' 'Description=FGO Arcade cabinet network addresses on lo' 'After=network.target' \
-            '' '[Service]' 'Type=oneshot' 'RemainAfterExit=yes' \
-            'ExecStart=/usr/bin/ip addr add 192.168.100.1/24 dev lo' \
-            'ExecStart=-/usr/bin/ip addr add 192.168.100.11/24 dev lo' \
-            '' '[Install]' 'WantedBy=multi-user.target' \
-            | sudo tee /etc/systemd/system/fgoa-cabinet-net.service >/dev/null \
-            && sudo systemctl enable --now fgoa-cabinet-net.service >/dev/null 2>&1 \
-            && say "kept as /etc/systemd/system/fgoa-cabinet-net.service so a reboot keeps them" \
-            || warn "could not install the unit; add the addresses by hand after each reboot"
-        ip -4 addr show lo | grep -q '192\.168\.100\.1/' \
-            || warn "the addresses are still not on lo - ERROR 8404 may come back after a reboot"
+# ---------------------------------------------------------------- checks for the root-only steps
+# Nothing in this file needs root. The cabinet network and the privileged port are set up by
+# install-sudo.sh; here they are only looked at, so that a plain install tells you to run it.
+#
+# The cabinet network is 192.168.100.0/24 because the platform expects it (App/FGO_LocalNetwork.ps1:
+# Server = 192.168.100.1, Cabinet = 192.168.100.11). A cabinet that cannot reach the location server
+# at 192.168.100.1 comes up as a sub unit, which the game answers with ERROR 8404.
+cabinet_addresses_missing() {
+    ip -4 addr show lo 2>/dev/null | grep -q '192\.168\.100\.1/' || return 0
+    ip -4 addr show lo 2>/dev/null | grep -q '192\.168\.100\.11/' || return 0
+    return 1
+}
+
+check_privileged() {
+    local need_sudo=0
+    if [ "$(sysctl -n net.ipv4.ip_unprivileged_port_start 2>/dev/null || echo 1024)" -gt 777 ]; then
+        warn "port 777 is privileged and not allowed for unprivileged processes yet"
+        need_sudo=1
     else
-        warn "cabinet addresses are not on lo: the game may come up as a sub cabinet (ERROR 8404)"
-        warn "  sudo ip addr add 192.168.100.1/24 dev lo; sudo ip addr add 192.168.100.11/24 dev lo"
+        say "port 777 is available to unprivileged processes"
+    fi
+    if cabinet_addresses_missing; then
+        warn "the cabinet network addresses are not on lo (the game may come up as a sub cabinet)"
+        need_sudo=1
+    else
+        say "cabinet network addresses are on lo"
+    fi
+    if [ "$need_sudo" = 1 ]; then
+        say "run the root-only steps yourself, they are in their own script:"
+        say "  sudo $HERE/install-sudo.sh"
     fi
 }
 
 # ---------------------------------------------------------------- ports and drirc
 setup_ports() {
-    if [ "$(sysctl -n net.ipv4.ip_unprivileged_port_start 2>/dev/null || echo 1024)" -gt 777 ]; then
-        if [ "$DO_SYSCTL" = 1 ]; then
-            say "allowing unprivileged ports from 777 (sudo)"
-            sudo sysctl -w net.ipv4.ip_unprivileged_port_start=777
-            printf '# FGO Arcade: the ALL.Net server needs port 777.\nnet.ipv4.ip_unprivileged_port_start = 777\n' \
-                | sudo tee /etc/sysctl.d/99-fgoa-ports.conf >/dev/null
-        else
-            warn "port 777 is privileged and the sysctl is not raised: the ALL.Net server cannot bind."
-            warn "For now:  sudo sysctl -w net.ipv4.ip_unprivileged_port_start=777"
-            warn "For good: echo 'net.ipv4.ip_unprivileged_port_start = 777' | sudo tee /etc/sysctl.d/99-fgoa-ports.conf"
-            warn "or run install.sh again with --sysctl"
-        fi
-    else
-        say "port 777 is available to unprivileged processes"
-    fi
-
     local dbport
     if port_busy "$DB_DEFAULT_PORT"; then
         dbport=$(free_port 8889)
@@ -348,7 +333,12 @@ verify_all() {
     if ip -4 addr show lo 2>/dev/null | grep -q '192\.168\.100\.1/'; then
         say "[OK]   cabinet network address on lo (the game will find a location server)"
     else
-        say "[WARN] no cabinet address on lo — the game may come up as a sub cabinet (ERROR 8404)"
+        say "[WARN] no cabinet address on lo — the game may come up as a sub cabinet (ERROR 8404); sudo $HERE/install-sudo.sh"
+    fi
+    if [ "$(sysctl -n net.ipv4.ip_unprivileged_port_start 2>/dev/null || echo 1024)" -le 777 ]; then
+        say "[OK]   port 777 is available to unprivileged processes"
+    else
+        say "[WARN] port 777 is still privileged — the ALL.Net server cannot bind; sudo $HERE/install-sudo.sh"
     fi
     if python3 "$HERE/scripts/patch-server.py" "$ROOT" --verify >/dev/null 2>&1; then
         say "[OK]   server-side fixes in place (bad_output, Max All Servants)"
@@ -412,8 +402,8 @@ check_game_layout || die "assemble the game folder (本体 + 前端 1.02 + the l
 step "this layer: ago.exe patches, English dataset, server-side fixes"; apply_our_layer
 step "Wine prefix"; setup_prefix
 step "Mesa drirc"; setup_drirc
-step "cabinet network"; setup_cabinet_net
-step "ports"; setup_ports
+step "root-only steps (checked here, run by install-sudo.sh)"; check_privileged
+step "ports and database"; setup_ports
 
 verify_all || true
 cat <<EOF
@@ -427,6 +417,8 @@ Next:
   3) Play. The first launch takes about a minute (shader compilation). The game starts in
      the background and the launcher stays responsive; the game's live output goes to
      logs/fgo-launch-<date>.log.
+     Steps that need root (port 777, the cabinet addresses) are not done by this script: run
+     sudo $HERE/install-sudo.sh once, and ./install.sh --verify will report both.
      If the startup screen reads SYSTEM STARTUP (SATELLITE:SUB) with Location Server: WAIT
      and the game then dies with ERROR 8404, it thinks it is a sub cabinet. The installer puts
      the cabinet network addresses on lo to stop that, but when it still happens the cure is the

@@ -39,8 +39,8 @@ not have to be applied separately.)
 
 **On the machine:**
 
-* Linux x86_64, `wine` (11.x used here), `python3`, ~35 GB free disk, and one `sudo` for the
-  privileged-port setting;
+* Linux x86_64, `wine` (11.x used here), `python3`, ~35 GB free disk, and one `sudo` run for the two
+  system settings (`install-sudo.sh`, below — nothing else asks for a password);
 * **fontconfig** (`fc-match`) and a free font package providing **Liberation Sans/Mono** and
   **DejaVu Sans Mono** — the launcher's WPF front end asks for families no Linux system has, and
   `install.sh` renames these into the Wine prefix on the spot
@@ -52,14 +52,29 @@ not have to be applied separately.)
 ## Install
 
 ```bash
-cp -a fgoa-wine /path/to/game/          # this folder becomes <game>/fgoa-wine
-/path/to/game/fgoa-wine/install.sh      # add --sysctl for the port-777 setting
+cp -a fgoa-wine /path/to/game/                  # this folder becomes <game>/fgoa-wine
+/path/to/game/fgoa-wine/install.sh              # everything that runs as your own user
+sudo /path/to/game/fgoa-wine/install-sudo.sh    # the only steps that need root
 ```
 
 `install.sh` uses the folder above itself as the game root; `--root <dir>` overrides that, and
 `--verify` only checks an existing install without changing anything. Other flags: `--prefix <dir>`,
-`--sysctl`, `--use-wayland`, `--no-fonts`, `--no-shim`, `--no-cabinet-net`. Re-running it is safe —
-every step is idempotent.
+`--use-wayland`, `--no-fonts`, `--no-shim`. Re-running either script is safe — every step is
+idempotent, and neither of them starts a game or a server.
+
+**What needs root, and nothing else does.** The privileged steps live in their own file,
+`install-sudo.sh`, so you can read them before handing over a password. It does three things:
+
+* port 777 for the ALL.Net server — `net.ipv4.ip_unprivileged_port_start = 777`, kept in
+  `/etc/sysctl.d/99-fgoa-ports.conf`;
+* the cabinet network on `lo` — `192.168.100.1/24` and `192.168.100.11/24` (`App/FGO_LocalNetwork.ps1`
+  is where those addresses come from: the game is told the title server is at `192.168.100.1`);
+* `/etc/systemd/system/fgoa-cabinet-net.service` — re-adds those addresses at boot, because
+  `ip addr add` on its own does not survive a reboot.
+
+`--no-ports` and `--no-cabinet-net` skip one of them, `--remove` takes them back out. Everything else
+this project does — the prefix, the shim, the fonts, the patches, the game folder — happens as your
+user, and `install.sh` will tell you when it finds one of the two missing.
 
 The installer, in order:
 
@@ -71,16 +86,15 @@ The installer, in order:
 3. creates the Wine prefix if needed and prepares it — the launcher's PowerShell shim, the WPF fonts
    **and their registry entries**, `~/.config/fgoa-wine/config.env`;
 4. sets up the Mesa config the game's shaders need;
-5. puts the **cabinet network** on `lo` (`192.168.100.1/24` and `192.168.100.11/24`, needs root, then
-   keeps them across reboots with `fgoa-cabinet-net.service`; `--no-cabinet-net` skips it) — this is
-   the network the platform's own `App/FGO_LocalNetwork.ps1` tells the game to expect, and without it
-   the game can come up as a sub cabinet and stop at ERROR 8404;
-6. sets up the ports — warns (or with `--sysctl` fixes) the privileged 777, and moves the database off
-   8888 if something else holds it;
+5. picks a free database port (moves off 8888 when something else holds it) and records it so the
+   scripts and the platform agree — a mismatch here is the "MariaDB did not come up" trap;
+6. reports the two root-only steps, which it does not do itself: until `sudo ./install-sudo.sh` has
+   run, port 777 is privileged and the cabinet addresses are missing, and `--verify` keeps saying so;
 7. verifies everything and prints what to do next.
 
-**Result to look for:** the last line reads `RESULT: everything is in place.` — then follow the numbered hints it
-prints.
+**Result to look for:** the last line reads `RESULT: everything is in place.` If a `[WARN]` above it
+mentions the cabinet address or port 777, that is the root-only part — run `sudo ./install-sudo.sh`
+and `./install.sh --verify` to see it turn green. Then follow the numbered hints.
 
 ## First run
 
@@ -123,7 +137,8 @@ Menu; **F2** moves the arrow, **F1** confirms) → **Game Settings** → **Start
 ./scripts/play.sh             # start the game directly, no launcher
 ./scripts/server.sh           # start the local server on its own
 ./scripts/server.sh stop      # stop it (do not kill MariaDB by hand, see below)
-./install.sh --verify         # is everything still in place?
+./install.sh --verify         # is everything still in place? (also reports the root-only steps)
+sudo ./install-sudo.sh --remove   # take the sysctl, the cabinet addresses and the unit back out
 ./uninstall.sh                # remove our layer from the prefix (game and saves stay)
 ```
 
@@ -144,7 +159,7 @@ returns the same Servant — that is a config value, not a bug.
 | `ERROR 8404` at boot, `Location Server : WAIT` | Cabinet role. First check that `install.sh` really put `192.168.100.1/24` on `lo` (`ip -4 addr show lo`); if the addresses are there, cure it in the game's own test menu — see "First run" above. |
 | `ERROR 4102` | The local server is not reachable. Start it from the launcher and wait for it to report ready, or run `./scripts/server.sh`. |
 | Launcher window ignores the mouse | Wine-side quirk: close the launcher and start it again. Clicks made while a modal dialog is open are swallowed by design. |
-| `PermissionError` / `Errno 13` on port 777 | Re-run `install.sh --sysctl` (or set `net.ipv4.ip_unprivileged_port_start = 777` yourself). |
+| `PermissionError` / `Errno 13` on port 777 | Run `sudo ./install-sudo.sh`, or set `net.ipv4.ip_unprivileged_port_start = 777` yourself. |
 | MariaDB will not start next time, "serious error" dialog | The database was killed instead of shut down. Always stop it with `./scripts/server.sh stop`. |
 | `Cannot use Aime card` at the title | The first message to the local server timed out on that boot: close the game, check the server is ready, press Play again. |
 | Game window opens and closes (exit code 22) | Try windowed 1280x720 on the primary monitor, and keep `logs/ago-crash-*.dmp` if you report it. |
@@ -164,7 +179,7 @@ With the game folder ready, the installer's own layer is these three commands:
 
 | Path | What it is |
 | --- | --- |
-| `install.sh`, `uninstall.sh` | The installer and its reverse. |
+| `install.sh`, `install-sudo.sh`, `uninstall.sh` | The installer, the root-only steps (port 777, the cabinet network), and the reverse. |
 | `scripts/launcher.sh`, `scripts/play.sh` | Start the launcher / start the game directly. |
 | `scripts/server.sh` | Start and stop the local server (MariaDB + ARTEMiS). |
 | `scripts/launch.py` | What actually starts the game: runtime config, hooks, deck channel, cabinet role. |

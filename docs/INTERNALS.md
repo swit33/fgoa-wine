@@ -70,7 +70,7 @@ needs that: the cabinet-role cure in `UPSTREAM.md` is a key the player presses.
   creates that network itself; under Wine nothing does. `fgohook.dll` rewrites the session traffic to
   `127.0.0.1`, which is why the game plays without the addresses — but the platform probe at boot has
   no such help, and a cabinet that cannot reach the location server comes up as a *sub* unit and shows
-  `ERROR 8404`. `install.sh` puts both addresses on `lo` and keeps them across reboots
+  `ERROR 8404`. `install-sudo.sh` (the root-only script) puts both addresses on `lo` and keeps them across reboots
   (`fgoa-cabinet-net.service`); `launch.py` warns when they are missing.
 
 * **Wine backend: X11 by default** — Wine takes its Wayland driver whenever `WAYLAND_DISPLAY` is set,
