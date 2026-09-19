@@ -58,7 +58,7 @@ while [ $# -gt 0 ]; do
         --sysctl|--no-cabinet-net)
                      echo "$1 moved out of install.sh - the root-only steps live in their own script:" >&2
                      echo "  sudo ./install-sudo.sh" >&2; exit 2 ;;
-        -h|--help)   awk 'NR>1 && /^set -u/{exit} NR>1{print}' "$0"; exit 0 ;;
+        -h|--help)   awk 'NR>1 && /^set -u/{exit} NR>1{print}' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) echo "unknown option: $1" >&2; exit 2 ;;
     esac
 done
