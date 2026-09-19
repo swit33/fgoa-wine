@@ -13,5 +13,12 @@ CONFIG="$HOME/.config/fgoa-wine/config.env"
 export FGOA_ROOT WINEPREFIX
 ROOT="$FGOA_ROOT"
 export WINEDEBUG=-all
+# Wine takes its Wayland driver whenever WAYLAND_DISPLAY is set. This launcher behaves better on
+# X11/XWayland (input and window handling - see docs/INTERNALS.md), so that is the default; the
+# installer's --use-wayland writes FGOA_WINE_BACKEND=wayland into the config instead.
+case "${FGOA_WINE_BACKEND:-x11}" in
+    wayland) : ;;
+    *)       unset WAYLAND_DISPLAY ;;
+esac
 cd "$ROOT" || exit 1
 exec wine './FGOAC scooby.exe'

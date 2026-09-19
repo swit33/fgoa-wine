@@ -252,11 +252,36 @@ def main():
               f"{native_render_argument(cfg['width'], cfg['height'])})")
         return 0
 
+    # Which driver Wine uses. Wine takes its Wayland driver whenever WAYLAND_DISPLAY is set, and
+    # this launcher and game behave better on X11/XWayland, so that is the default (install.sh
+    # writes FGOA_WINE_BACKEND, install.sh --use-wayland switches). scripts/launcher.sh makes the
+    # same choice for the launcher window itself.
+    if os.environ.get("FGOA_WINE_BACKEND", "x11") != "wayland":
+        os.environ.pop("WAYLAND_DISPLAY", None)
+    # The platform's own network plan (App/FGO_LocalNetwork.ps1) puts the title server at
+    # 192.168.100.1 on the cabinet subnet, and the game is told so through the ini this script
+    # writes. On Windows the platform creates that network; here the host has to carry it, or the
+    # game's platform probe finds nothing and the cabinet comes up as a sub unit (ERROR 8404).
+    if not cabinet_network_present():
+        print("warning: 192.168.100.1 is not on lo - the game may boot as a sub cabinet "
+              "(ERROR 8404); run install.sh, or: sudo ip addr add 192.168.100.1/24 dev lo",
+              file=sys.stderr)
     os.environ.update(env)
     os.environ.setdefault("WINEPREFIX", os.path.expanduser("~/.local/share/fgoa-wine/prefix"))
     os.environ["WINEDEBUG"] = "-all"
     os.chdir(os.path.join(root, "App"))
     os.execvp("wine", ["wine"] + args)
+
+
+def cabinet_network_present():
+    """True when lo carries at least one of the cabinet addresses the platform expects."""
+    try:
+        out = subprocess.run(["ip", "-4", "addr", "show", "lo"], capture_output=True, text=True, timeout=5)
+    except (OSError, subprocess.SubprocessError):
+        return True          # no `ip` to ask: do not cry wolf
+    if out.returncode != 0:
+        return True
+    return "192.168.100." in out.stdout
 
 
 def sh_quote(value):

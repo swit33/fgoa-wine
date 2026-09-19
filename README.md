@@ -58,20 +58,26 @@ cp -a fgoa-wine /path/to/game/          # this folder becomes <game>/fgoa-wine
 
 `install.sh` uses the folder above itself as the game root; `--root <dir>` overrides that, and
 `--verify` only checks an existing install without changing anything. Other flags: `--prefix <dir>`,
-`--sysctl`, `--no-fonts`, `--no-shim`. Re-running it is safe — every step is idempotent.
+`--sysctl`, `--use-wayland`, `--no-fonts`, `--no-shim`, `--no-cabinet-net`. Re-running it is safe —
+every step is idempotent.
 
 The installer, in order:
 
 1. checks that the game folder is the one described above and lists what is missing if not;
-2. applies this project's layer — the `ago.exe` import fix, the English dataset (including the
-   `fgozh.dll` fix that makes the release's own English hook work under Wine), and two server-side
-   fixes;
+2. applies this project's layer — two `ago.exe` byte patches (`SetWindowFeedbackSetting`, and the
+   robust-access context flag that otherwise crashes the game on NVIDIA, see
+   [`docs/UPSTREAM.md`](docs/UPSTREAM.md)), the English dataset (including the `fgozh.dll` fix that
+   makes the release's own English hook work under Wine), and two server-side fixes;
 3. creates the Wine prefix if needed and prepares it — the launcher's PowerShell shim, the WPF fonts
    **and their registry entries**, `~/.config/fgoa-wine/config.env`;
 4. sets up the Mesa config the game's shaders need;
-5. sets up the ports — warns (or with `--sysctl` fixes) the privileged 777, and moves the database off
+5. puts the **cabinet network** on `lo` (`192.168.100.1/24` and `192.168.100.11/24`, needs root, then
+   keeps them across reboots with `fgoa-cabinet-net.service`; `--no-cabinet-net` skips it) — this is
+   the network the platform's own `App/FGO_LocalNetwork.ps1` tells the game to expect, and without it
+   the game can come up as a sub cabinet and stop at ERROR 8404;
+6. sets up the ports — warns (or with `--sysctl` fixes) the privileged 777, and moves the database off
    8888 if something else holds it;
-6. verifies everything and prints what to do next.
+7. verifies everything and prints what to do next.
 
 **Result to look for:** the last line reads `RESULT: everything is in place.` — then follow the numbered hints it
 prints.
@@ -85,6 +91,15 @@ prints.
 The launcher's first start sets itself up (it checks the environment, applies the English patch and
 creates an account called `Master`), then press **Play**. The first launch takes about a minute while
 the game compiles shaders.
+
+**X11 is the default.** `scripts/launcher.sh` and `scripts/launch.py` clear `WAYLAND_DISPLAY`, because
+Wine takes its Wayland driver whenever that variable is set, and the X11/XWayland path is the one this
+project is verified on. `install.sh --use-wayland` writes `FGOA_WINE_BACKEND="wayland"` into
+`~/.config/fgoa-wine/config.env` and leaves the variable alone instead; re-running the installer without
+the flag puts X11 back. One honest caveat: on the Wine 11.17 built for the machine this was developed
+on, the Wayland driver is not selected even with the variable set — `winex11.so` loads either way (also
+with `WINEDLLOVERRIDES=winewayland.drv=b` and with `HKCU\Software\Wine\Drivers\Graphics=wayland`), so
+the flag currently changes nothing here. It is there for Wine builds that do honour it.
 
 Before you press Play, one thing is worth doing on the launcher's pages:
 
@@ -126,7 +141,7 @@ returns the same Servant — that is a config value, not a bug.
 
 | Symptom | What to do |
 | --- | --- |
-| `ERROR 8404` at boot, `Location Server : WAIT` | Cabinet role — see "First run" above. |
+| `ERROR 8404` at boot, `Location Server : WAIT` | Cabinet role. First check that `install.sh` really put `192.168.100.1/24` on `lo` (`ip -4 addr show lo`); if the addresses are there, cure it in the game's own test menu — see "First run" above. |
 | `ERROR 4102` | The local server is not reachable. Start it from the launcher and wait for it to report ready, or run `./scripts/server.sh`. |
 | Launcher window ignores the mouse | Wine-side quirk: close the launcher and start it again. Clicks made while a modal dialog is open are swallowed by design. |
 | `PermissionError` / `Errno 13` on port 777 | Re-run `install.sh --sysctl` (or set `net.ipv4.ip_unprivileged_port_start = 777` yourself). |
@@ -153,7 +168,7 @@ With the game folder ready, the installer's own layer is these three commands:
 | `scripts/launcher.sh`, `scripts/play.sh` | Start the launcher / start the game directly. |
 | `scripts/server.sh` | Start and stop the local server (MariaDB + ARTEMiS). |
 | `scripts/launch.py` | What actually starts the game: runtime config, hooks, deck channel, cabinet role. |
-| `scripts/apply-en.py`, `scripts/patch-ago-import.py`, `scripts/patch-server.py` | The three text/binary patches, each idempotent with its own `--verify`. |
+| `scripts/apply-en.py`, `scripts/patch-ago-import.py`, `scripts/patch-ago-gl.py`, `scripts/patch-server.py` | The four patches, each idempotent and each with its own `--verify`. |
 | `scripts/{set-ports,fix-account,stop-watcher}.py` | Port fixing, broken-account repair, and the server's idle watcher. |
 | `shim/` | The launcher's PowerShell replacement (PE stub + bash dispatcher + handlers). |
 | `config/drirc.d/99-fgoa.conf` | The Mesa setting the game's shaders need. |
@@ -172,8 +187,12 @@ the English patch and the launcher this folder exists to run. Its `payload/`, `m
 `Apply-EN-Patch.ps1` and `compat/` are used exactly as shipped — nothing here reimplements them.
 * **[yana-arch](https://github.com/yana-arch) — [FGOAC-scooby-linux](https://github.com/yana-arch/FGOAC-scooby-linux)**
 (branch `linux-support`): two of the fixes here are theirs — the five-byte `fgozh.dll` patch that lets
-the release's own English hook load under Wine, and the two `Server/tools/` fixes. What was taken,
-and what was measured before taking it, is in [`docs/UPSTREAM.md`](docs/UPSTREAM.md).
+the release's own English hook load under Wine, and the two `Server/tools/` fixes.
+* **[quinnjr](https://github.com/quinnjr) — [FGOAC-scooby](https://github.com/quinnjr/FGOAC-scooby)**
+(branch `wine-compat`, MIT): X11 as the Wine backend, the cabinet network addresses on `lo`, and the
+`ago.exe` patch that drops the robust-access context request all come from that branch. He took a
+different route overall — his `play-fgo.sh` bypasses the launcher and drives the game directly — and
+why we took some of his work and not the rest is in [`docs/UPSTREAM.md`](docs/UPSTREAM.md).
 * **Cloud23333** — the FGO Arcade local platform (`本体`, `前端`) that everything runs on.
 * The fonts the launcher needs are **Liberation Sans/Mono** (SIL OFL 1.1) and **DejaVu Sans Mono**
   (Bitstream Vera licence), taken from your system and renamed locally by the installer — none of them

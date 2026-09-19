@@ -9,12 +9,14 @@
 #
 # What it does (idempotent):
 #   1) checks that this is that folder and lists whatever is missing;
-#   2) this layer: the ago.exe import patch, the English dataset (the fgozh.dll hook
-#      patch, 1683 files, the strings inside ago.exe), the server-side fixes;
+#   2) this layer: the two ago.exe patches (the SetWindowFeedbackSetting import, the
+#      robust-access request), the English dataset (the fgozh.dll hook patch, 1683 files, the
+#      strings inside ago.exe), the server-side fixes;
 #   3) prepares the Wine prefix: creates it when needed, installs the shim in place of
 #      pwsh.exe, installs and registers the WPF fonts, writes the shim config;
 #   4) the Mesa config the game's shaders need (config/drirc.d);
-#   5) the ports: ALL.Net 777 is privileged (--sysctl), the database moves off a busy 8888;
+#   5) the network the game expects: the cabinet addresses on lo, then the ports (ALL.Net 777
+#      is privileged (--sysctl), the database moves off a busy 8888);
 #   6) verifies the result and prints what to do next.
 #
 # Usage (the release sits inside the game folder as <root>/fgoa-wine):
@@ -23,7 +25,10 @@
 #   ./install.sh --prefix /path        # Wine prefix (default ~/.local/share/fgoa-wine/prefix)
 #   ./install.sh --verify              # check an existing install, change nothing
 #   ./install.sh --sysctl              # also allow port 777 (needs root)
-#   ./install.sh --no-fonts | --no-shim
+#   ./install.sh --use-wayland         # run Wine on its Wayland driver instead of X11. X11 is
+#                                      # the default: through XWayland the launcher and the game
+#                                      # take input on the better-trodden path (docs/INTERNALS.md)
+#   ./install.sh --no-fonts | --no-shim | --no-cabinet-net
 set -u
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -34,17 +39,23 @@ CONFIG="$CONFIG_DIR/config.env"
 TMPDIR_FGOA="${TMPDIR:-/tmp}/fgoa-wine-install"
 LOG="$TMPDIR_FGOA/install.log"
 
-DO_VERIFY=0; DO_SYSCTL=0; DO_FONTS=1; DO_SHIM=1
+DO_VERIFY=0; DO_SYSCTL=0; DO_FONTS=1; DO_SHIM=1; DO_CABINET_NET=1
+# X11 by default: Wine picks its Wayland driver whenever WAYLAND_DISPLAY is set, and the
+# X11/XWayland path is the one this launcher behaves on (see docs/INTERNALS.md).
+BACKEND=x11
 
 while [ $# -gt 0 ]; do
     case "$1" in
         --root)      ROOT="$2"; shift 2 ;;
         --prefix)    PREFIX="$2"; shift 2 ;;
-        --verify)    DO_VERIFY=1; DO_FONTS=0; DO_SHIM=0; shift ;;
+        --verify)    DO_VERIFY=1; DO_FONTS=0; DO_SHIM=0; DO_CABINET_NET=0; shift ;;
         --sysctl)    DO_SYSCTL=1; shift ;;
+        --use-x11)   BACKEND=x11; shift ;;
+        --use-wayland) BACKEND=wayland; shift ;;
         --no-fonts)  DO_FONTS=0; shift ;;
         --no-shim)   DO_SHIM=0; shift ;;
-        -h|--help)   sed -n '2,24p' "$0"; exit 0 ;;
+        --no-cabinet-net) DO_CABINET_NET=0; shift ;;
+        -h|--help)   awk 'NR>1 && /^set -u/{exit} NR>1{print}' "$0"; exit 0 ;;
         *) echo "unknown option: $1" >&2; exit 2 ;;
     esac
 done
@@ -125,6 +136,13 @@ apply_our_layer() {
     cp -f "$pristine" "$ROOT/App/ago.exe.orig"     # backup patch-ago-import.py expects
     python3 "$HERE/scripts/patch-ago-import.py" "$ROOT/App/ago.exe" SetWindowFeedbackSetting IsWindow --apply >/dev/null
     say "import SetWindowFeedbackSetting -> IsWindow: applied"
+    # Wine's EGL backend refuses the robust-access context the game asks for (it is what
+    # breaks ago.exe on NVIDIA); dropping the request lets the context exist at all.
+    if python3 "$HERE/scripts/patch-ago-gl.py" "$ROOT/App/ago.exe" --apply >/dev/null; then
+        say "robust-access context flag: dropped"
+    else
+        warn "could not drop the robust-access flag - is this the expected ago.exe?"
+    fi
     python3 "$HERE/scripts/apply-en.py" "$ROOT" --apply | tail -3
     python3 "$HERE/scripts/patch-server.py" "$ROOT" --apply | tail -2
 }
@@ -209,8 +227,45 @@ WINEPREFIX="$PREFIX"
 FGOA_SCRIPTS="$HERE/scripts"
 FGOA_HANDLERS="$HERE/shim/handlers"
 FGOA_SHIM_LOG="/tmp/fgoa-shim.log"
+# x11 (default) or wayland: which driver Wine uses for the launcher and the game.
+FGOA_WINE_BACKEND="$BACKEND"
 EOF
-    say "shim config: $CONFIG"
+    say "shim config: $CONFIG (Wine backend: $BACKEND)"
+}
+
+# ---------------------------------------------------------------- cabinet network
+# The game's platform probe looks for the location server on the cabinet network
+# (192.168.100.0/24 - the addresses a real cabinet carries), and a cabinet that cannot reach it
+# comes up as a sub unit, which the game answers with ERROR 8404 at boot. The addresses go on lo;
+# `ip addr add` does not survive a reboot, so a unit re-adds them at boot.
+# Idea (and the reason it works) from quinnjr's wine-compat branch, see docs/UPSTREAM.md.
+setup_cabinet_net() {
+    local missing=""
+    ip -4 addr show lo 2>/dev/null | grep -q '192\.168\.100\.1/'  || missing="192.168.100.1/24"
+    ip -4 addr show lo 2>/dev/null | grep -q '192\.168\.100\.11/' || missing="$missing 192.168.100.11/24"
+    if [ -z "$missing" ]; then
+        say "cabinet network addresses are already on lo"
+    elif [ "$DO_CABINET_NET" = 1 ]; then
+        say "adding the cabinet network addresses to lo (sudo):$missing"
+        sudo ip addr add 192.168.100.1/24 dev lo 2>/dev/null || true
+        sudo ip addr add 192.168.100.11/24 dev lo 2>/dev/null || true
+        printf '%s\n' \
+            '# FGO Arcade: the cabinet virtual network, which the platform probe expects.' \
+            '[Unit]' 'Description=FGO Arcade cabinet network addresses on lo' 'After=network.target' \
+            '' '[Service]' 'Type=oneshot' 'RemainAfterExit=yes' \
+            'ExecStart=/usr/bin/ip addr add 192.168.100.1/24 dev lo' \
+            'ExecStart=-/usr/bin/ip addr add 192.168.100.11/24 dev lo' \
+            '' '[Install]' 'WantedBy=multi-user.target' \
+            | sudo tee /etc/systemd/system/fgoa-cabinet-net.service >/dev/null \
+            && sudo systemctl enable --now fgoa-cabinet-net.service >/dev/null 2>&1 \
+            && say "kept as /etc/systemd/system/fgoa-cabinet-net.service so a reboot keeps them" \
+            || warn "could not install the unit; add the addresses by hand after each reboot"
+        ip -4 addr show lo | grep -q '192\.168\.100\.1/' \
+            || warn "the addresses are still not on lo - ERROR 8404 may come back after a reboot"
+    else
+        warn "cabinet addresses are not on lo: the game may come up as a sub cabinet (ERROR 8404)"
+        warn "  sudo ip addr add 192.168.100.1/24 dev lo; sudo ip addr add 192.168.100.11/24 dev lo"
+    fi
 }
 
 # ---------------------------------------------------------------- ports and drirc
@@ -241,6 +296,17 @@ setup_ports() {
     FGOA_WIN_ROOT="Z:$ROOT" wine_run "$ROOT/Server/python/python.exe" \
         "$HERE/scripts/set-ports.py" 777 "$dbport" >/dev/null 2>&1 \
         || warn "could not move the ports automatically (do it on the launcher's Advanced page)"
+
+    # server.sh reads the database port from here: mariadb.ini (which set-ports.py just wrote) and
+    # this file have to agree, or MariaDB comes up on one port while the script waits on another.
+    if [ -f "$CONFIG" ]; then
+        if grep -q '^FGOA_DB_PORT=' "$CONFIG" 2>/dev/null; then
+            sed -i "s|^FGOA_DB_PORT=.*|FGOA_DB_PORT=\"$dbport\"|" "$CONFIG"
+        else
+            printf 'FGOA_DB_PORT="%s"\n' "$dbport" >> "$CONFIG"
+        fi
+    fi
+    say "database port $dbport (written into the platform's config and into config.env)"
 }
 
 setup_drirc() {
@@ -266,6 +332,23 @@ verify_all() {
         say "[OK]   English dataset in place (zh hook + files on disk)"
     else
         say "[FAIL] the English dataset does not verify — run install.sh again"; fails=$((fails+1))
+    fi
+    if python3 "$HERE/scripts/patch-ago-gl.py" "$ROOT/App/ago.exe" --verify >/dev/null 2>&1; then
+        say "[OK]   ago.exe: robust-access context flag dropped"
+    else
+        say "[FAIL] ago.exe still asks for a robust-access context — run install.sh again"; fails=$((fails+1))
+    fi
+    if grep -q '^FGOA_WINE_BACKEND="wayland"' "$CONFIG" 2>/dev/null; then
+        say "[OK]   Wine backend: wayland"
+    elif grep -q '^FGOA_WINE_BACKEND=' "$CONFIG" 2>/dev/null; then
+        say "[OK]   Wine backend: x11"
+    else
+        say "[OK]   Wine backend: x11 (nothing in the config says otherwise)"
+    fi
+    if ip -4 addr show lo 2>/dev/null | grep -q '192\.168\.100\.1/'; then
+        say "[OK]   cabinet network address on lo (the game will find a location server)"
+    else
+        say "[WARN] no cabinet address on lo — the game may come up as a sub cabinet (ERROR 8404)"
     fi
     if python3 "$HERE/scripts/patch-server.py" "$ROOT" --verify >/dev/null 2>&1; then
         say "[OK]   server-side fixes in place (bad_output, Max All Servants)"
@@ -293,6 +376,16 @@ verify_all() {
         say "[FAIL] WPF still uses hardware acceleration — dropdowns will be black"; fails=$((fails+1))
     fi
     if [ -r "$CONFIG" ]; then say "[OK]   shim config: $CONFIG"; else say "[FAIL] $CONFIG is missing"; fails=$((fails+1)); fi
+    local ini_db config_db
+    ini_db=$(sed -n 's/^port=\([0-9]*\)[[:space:]]*$/\1/p' "$ROOT/Server/mariadb.ini" 2>/dev/null | head -1)
+    config_db=$(sed -n 's/^FGOA_DB_PORT="\([0-9]*\)"$/\1/p' "$CONFIG" 2>/dev/null | head -1)
+    if [ -n "$ini_db" ] && [ "$ini_db" = "$config_db" ]; then
+        say "[OK]   database port $ini_db (the platform and server.sh agree)"
+    elif [ -z "$config_db" ]; then
+        say "[WARN] config.env has no FGOA_DB_PORT — server.sh assumes 8889 while the platform uses ${ini_db:-?}; run install.sh again"
+    else
+        say "[FAIL] database port mismatch: the platform uses $ini_db, server.sh would use $config_db"; fails=$((fails+1))
+    fi
     printf '\n'
     if [ "$fails" -eq 0 ]; then say "RESULT: everything is in place."; else say "RESULT: $fails problem(s)."; fi
     return "$fails"
@@ -316,9 +409,10 @@ if [ "$DO_FONTS" = 1 ]; then need_fonts_tools; fi
 step "checking the game folder"
 check_game_layout || die "assemble the game folder (本体 + 前端 1.02 + the launcher release) and run the installer again"
 
-step "this layer: ago.exe patch, English dataset, server-side fixes"; apply_our_layer
+step "this layer: ago.exe patches, English dataset, server-side fixes"; apply_our_layer
 step "Wine prefix"; setup_prefix
 step "Mesa drirc"; setup_drirc
+step "cabinet network"; setup_cabinet_net
 step "ports"; setup_ports
 
 verify_all || true
@@ -334,8 +428,9 @@ Next:
      the background and the launcher stays responsive; the game's live output goes to
      logs/fgo-launch-<date>.log.
      If the startup screen reads SYSTEM STARTUP (SATELLITE:SUB) with Location Server: WAIT
-     and the game then dies with ERROR 8404, it thinks it is a sub cabinet. Fix it in its own
-     test menu: F1 (F2 moves the arrow, F1 confirms) -> Game Settings -> Startup Mode ->
-     Main Unit -> Exit, then press Play again.
+     and the game then dies with ERROR 8404, it thinks it is a sub cabinet. The installer puts
+     the cabinet network addresses on lo to stop that, but when it still happens the cure is the
+     game's own test menu: F1 (F2 moves the arrow, F1 confirms) -> Game Settings ->
+     Startup Mode -> Main Unit -> Exit, then press Play again.
   4) If the launcher stops reacting to the mouse, close it and start it again.
 EOF

@@ -54,6 +54,39 @@ needs that: the cabinet-role cure in `UPSTREAM.md` is a key the player presses.
   and `install.sh` always rebuilds `ago.exe` from `App/ago.exe.pristine`, so the result is
   deterministic.
 
+* **Robust-access context flag (`patch-ago-gl.py`)** — at startup the game creates a second OpenGL
+  context asking for `WGL_CONTEXT_FLAGS_ARB = ROBUST_ACCESS`. Wine's EGL backend refuses that request
+  (`EGL_BAD_MATCH`), the game drops the context and then resolves its 280-entry OpenGL table with none
+  current — and Wine's `wglGetProcAddress` returns NULL for every GL 1.2+ symbol in that state, so the
+  table stays zero and the game dies on the first call through it. Zeroing the attribute name at
+  `0x27AF7D` ends the attribute list before the flag is read, so the context exists at all. On this
+  project's AMD + Mesa hardware Mesa answers the request instead of refusing it, so the crash does not
+  happen here and the patch is carried unverified — see the script's own header and
+  `docs/UPSTREAM.md`.
+
+* **Cabinet network `192.168.100.0/24` on `lo`** — the platform's own network plan
+  (`App/FGO_LocalNetwork.ps1`: `Server = 192.168.100.1`, `Cabinet = 192.168.100.11`) is what the game is
+  told to expect, and `launch.py` writes it into the config the game reads. On Windows the platform
+  creates that network itself; under Wine nothing does. `fgohook.dll` rewrites the session traffic to
+  `127.0.0.1`, which is why the game plays without the addresses — but the platform probe at boot has
+  no such help, and a cabinet that cannot reach the location server comes up as a *sub* unit and shows
+  `ERROR 8404`. `install.sh` puts both addresses on `lo` and keeps them across reboots
+  (`fgoa-cabinet-net.service`); `launch.py` warns when they are missing.
+
+* **Wine backend: X11 by default** — Wine takes its Wayland driver whenever `WAYLAND_DISPLAY` is set,
+  and X11/XWayland is the path everything here was verified on, so `scripts/launcher.sh` and
+  `scripts/launch.py` clear the variable unless `FGOA_WINE_BACKEND="wayland"` (what
+  `install.sh --use-wayland` writes). Measured on the machine this was built on (Wine 11.17,
+  CachyOS, RX 9070 XT): the launcher loads `winex11.so` with `WAYLAND_DISPLAY` set, with it empty, with
+  `WINEDLLOVERRIDES=winewayland.drv=b` and with `HKCU\Software\Wine\Drivers\Graphics=wayland` — so on
+  this build the Wayland driver is never selected and the backend flag changes nothing here. What the
+  X11 path does give is a working input chain for both windows (verified: launcher panes react to
+  clicks, the game's title answers a click with `pre_start` carrying the card from `DEVICE/aime.txt`).
+  Note what is *not* part of this: two crashes were chased as "lost clicks" before, and neither was a
+  driver problem — one was a modal dialog swallowing clicks by design (the launcher disables its main
+  window while one is open), the other is that synthetic clicks from the compositor (Hyprland's
+  dispatchers, XTest through XWayland) never reach a Wine window at all. Real input does.
+
 * **`config/drirc.d/99-fgoa.conf`** — with default Mesa settings the game's shader compilation fails
   with `embedded structure declarations are not allowed` and the game crashes. Mesa ships the matching
   switch (`allow_glsl_embedded_structure_declarations`); the config enables it for `ago.exe` only.
