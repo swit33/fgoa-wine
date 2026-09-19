@@ -45,6 +45,9 @@ git archive --format=tar.gz --prefix="$NAME/" -o "$ARCHIVE" HEAD
 tar -tzf "$ARCHIVE" | grep -qx "$NAME/install.sh"        || die "install.sh is missing from the archive"
 tar -tzf "$ARCHIVE" | grep -qx "$NAME/install-sudo.sh"   || die "install-sudo.sh is missing from the archive"
 tar -tzf "$ARCHIVE" | grep -qx "$NAME/README.md"         || die "README.md is missing from the archive"
+# The PE stub is the launcher's PowerShell shim, and install.sh can only rebuild it where winegcc
+# exists: a release without it installs nothing on a machine that has no compiler.
+tar -tzf "$ARCHIVE" | grep -qx "$NAME/shim/stub/pwsh-stub.exe" || die "the prebuilt PE stub is missing from the archive"
 if tar -tzf "$ARCHIVE" | grep -q '\.git/'; then die "the archive contains .git"; fi
 if tar -tzf "$ARCHIVE" | grep -q '__pycache__'; then die "the archive contains __pycache__"; fi
 for f in install.sh install-sudo.sh uninstall.sh scripts/launcher.sh shim/pwsh-shim.sh; do
