@@ -159,6 +159,7 @@ returns the same Servant — that is a config value, not a bug.
 | `ERROR 8404` at boot, `Location Server : WAIT` | Cabinet role. First check that `install.sh` really put `192.168.100.1/24` on `lo` (`ip -4 addr show lo`); if the addresses are there, cure it in the game's own test menu — see "First run" above. |
 | `ERROR 4102` | The local server is not reachable. Start it from the launcher and wait for it to report ready, or run `./scripts/server.sh`. |
 | Launcher window ignores the mouse | Wine-side quirk: close the launcher and start it again. Clicks made while a modal dialog is open are swallowed by design. |
+| **The game** ignores the mouse when started from the launcher, but works from the scripts | Known issue [#1](https://github.com/swit33/fgoa-wine/issues/1): the launcher window can end up on top of the game window and swallow the clicks. Minimize the launcher after pressing Play, or start the game directly — `./scripts/server.sh`, then `./scripts/play.sh`. The launcher's `borderless` display mode is worth trying too. |
 | `PermissionError` / `Errno 13` on port 777 | Run `sudo ./install-sudo.sh`, or set `net.ipv4.ip_unprivileged_port_start = 777` yourself. |
 | MariaDB will not start next time, "serious error" dialog | The database was killed instead of shut down. Always stop it with `./scripts/server.sh stop`. |
 | `Cannot use Aime card` at the title | The first message to the local server timed out on that boot: close the game, check the server is ready, press Play again. |
