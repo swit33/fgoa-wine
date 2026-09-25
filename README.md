@@ -39,8 +39,9 @@ not have to be applied separately.)
 
 **On the machine:**
 
-* Linux x86_64, `wine` (11.x used here), `python3`, ~35 GB free disk, and one `sudo` run for the two
-  system settings (`install-sudo.sh`, below — nothing else asks for a password);
+* Linux x86_64, `wine` (**11.18 or newer** — 11.17 has the mouse bug from issue #1), `python3`,
+  ~35 GB free disk, and one `sudo` run for the two system settings (`install-sudo.sh`, below —
+  nothing else asks for a password);
 * **fontconfig** (`fc-match`) and a free font package providing **Liberation Sans/Mono** and
   **DejaVu Sans Mono** — the launcher's WPF front end asks for families no Linux system has, and
   `install.sh` renames these into the Wine prefix on the spot
@@ -159,7 +160,7 @@ returns the same Servant — that is a config value, not a bug.
 | `ERROR 8404` at boot, `Location Server : WAIT` | Cabinet role. First check that `install.sh` really put `192.168.100.1/24` on `lo` (`ip -4 addr show lo`); if the addresses are there, cure it in the game's own test menu — see "First run" above. |
 | `ERROR 4102` | The local server is not reachable. Start it from the launcher and wait for it to report ready, or run `./scripts/server.sh`. |
 | Launcher window ignores the mouse | Wine-side quirk: close the launcher and start it again. Clicks made while a modal dialog is open are swallowed by design. |
-| **The game** ignores the mouse when started from the launcher, but works from the scripts | Known issue [#1](https://github.com/swit33/fgoa-wine/issues/1): the launcher window can end up on top of the game window and swallow the clicks. Minimize the launcher after pressing Play, or start the game directly — `./scripts/server.sh`, then `./scripts/play.sh`. The launcher's `borderless` display mode is worth trying too. |
+| **The game** ignores the mouse when started from the launcher (keys still work, and it plays fine from the scripts) | A Wine bug in **11.17**: `winex11` ignored some focus events when the compositor sent XI2 raw mouse events, so the game stopped seeing clicks while another Wine window — the launcher — was open. Fixed in **11.18**, A/B tested by the reporter in [#1](https://github.com/swit33/fgoa-wine/issues/1); on Arch and CachyOS 11.18 is in the repositories. Update Wine. Until then, closing the launcher after Play, or `./scripts/server.sh` + `./scripts/play.sh`, works. |
 | `PermissionError` / `Errno 13` on port 777 | Run `sudo ./install-sudo.sh`, or set `net.ipv4.ip_unprivileged_port_start = 777` yourself. |
 | MariaDB will not start next time, "serious error" dialog | The database was killed instead of shut down. Always stop it with `./scripts/server.sh stop`. |
 | `Cannot use Aime card` at the title | The first message to the local server timed out on that boot: close the game, check the server is ready, press Play again. |
