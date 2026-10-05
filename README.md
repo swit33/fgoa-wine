@@ -77,6 +77,11 @@ idempotent, and neither of them starts a game or a server.
 this project does — the prefix, the shim, the fonts, the patches, the game folder — happens as your
 user, and `install.sh` will tell you when it finds one of the two missing.
 
+**Do not run the launcher, or `install.sh`, with `sudo`.** Root cannot reach your sound session, so the
+game would play without audio and would not show up in your mixer, and it would use `/root/...` as its
+Wine prefix. That workaround is also where "the folder is locked" comes from: if part of the game folder
+is owned by `root`, your user cannot write to it, running as root hides that, and the sound goes quiet.
+
 The installer, in order:
 
 1. checks that the game folder is the one described above and lists what is missing if not;
@@ -161,6 +166,7 @@ returns the same Servant — that is a config value, not a bug.
 | `ERROR 4102` | The local server is not reachable. Start it from the launcher and wait for it to report ready, or run `./scripts/server.sh`. |
 | Launcher window ignores the mouse | Wine-side quirk: close the launcher and start it again. Clicks made while a modal dialog is open are swallowed by design. |
 | **The game** ignores the mouse when started from the launcher (keys still work, and it plays fine from the scripts) | A Wine bug in **11.17**: `winex11` ignored some focus events when the compositor sent XI2 raw mouse events, so the game stopped seeing clicks while another Wine window — the launcher — was open. Fixed in **11.18**, A/B tested by the reporter in [#1](https://github.com/swit33/fgoa-wine/issues/1); on Arch and CachyOS 11.18 is in the repositories. Update Wine. Until then, closing the launcher after Play, or `./scripts/server.sh` + `./scripts/play.sh`, works. |
+| The launcher says a folder is locked, or the game has no sound and does not appear in your mixer | Something in the game folder or the prefix is owned by `root`, so your user cannot write to it, and running the launcher with `sudo` looks like the way out. It is not: root cannot reach your sound session, so the game mixes into nothing, and it uses `/root/...` as its Wine prefix. Fix the ownership instead — `sudo chown -R $USER:$USER <game folder> ~/.local/share/fgoa-wine/prefix`, then run `./install.sh` as your own user again. |
 | `PermissionError` / `Errno 13` on port 777 | Run `sudo ./install-sudo.sh`, or set `net.ipv4.ip_unprivileged_port_start = 777` yourself. |
 | MariaDB will not start next time, "serious error" dialog | The database was killed instead of shut down. Always stop it with `./scripts/server.sh stop`. |
 | `Cannot use Aime card` at the title | The first message to the local server timed out on that boot: close the game, check the server is ready, press Play again. |

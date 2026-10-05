@@ -88,7 +88,12 @@ of an existing install. **No game data is included** — you need your own assem
 (Cloud23333's 本体 + 前端 1.02 + the FGOAC scooby launcher release). This project is glue for files
 you already have, and it is not sold.
 
-**Experimental, and tested on exactly one machine** (CachyOS, wine 11.17, Radeon RX 9070 XT). Another
+**Wine 11.18 or newer.** With Wine 11.17 the game loses mouse clicks while the launcher is open — it
+looks like the launcher is swallowing them, and closing it appears to fix things, but the bug is in Wine
+([#1](https://github.com/swit33/fgoa-wine/issues/1)).
+
+**Experimental, and tested on exactly one machine** (CachyOS, wine 11.17, Radeon RX 9070 XT — which is
+why the Wine 11.18 note above is there). Another
 distribution, another GPU or another Wine build may behave differently. Read
 [\`README.md\`](https://github.com/swit33/fgoa-wine/blob/$VERSION/README.md) before starting, and see
 [\`docs/UPSTREAM.md\`](https://github.com/swit33/fgoa-wine/blob/$VERSION/docs/UPSTREAM.md) for where
